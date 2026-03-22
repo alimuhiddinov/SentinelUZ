@@ -17,13 +17,33 @@ from .serializers import (
     ClientSerializer, ProcessSerializer, PortSerializer,
     SuspiciousActivitySerializer, VulnerabilitySerializer, LogSerializer, WindowsEventLogSerializer
 )
-from .utils import analyze_vulnerabilities
+from .utils import analyze_vulnerabilities, match_iocs
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.http import HttpResponse, JsonResponse
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.contrib import messages
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def health_check(request):
+    from .models import ThreatIntelIP, ThreatIntelHash, Client
+    return Response({
+        "status": "ok",
+        "version": "1.0",
+        "timestamp": timezone.now().isoformat(),
+        "app": "SentinelUZ EDR",
+        "stats": {
+            "threat_intel_ips": ThreatIntelIP.objects.filter(
+                is_active=True).count(),
+            "threat_intel_hashes": ThreatIntelHash.objects.filter(
+                is_active=True).count(),
+            "active_endpoints": Client.objects.filter(
+                is_active=True).count(),
+        }
+    })
+
 
 def home(request):
     if request.user.is_authenticated:
@@ -398,6 +418,7 @@ def upload_data(request):
 
         # Analyze vulnerabilities for the updated client data
         analyze_vulnerabilities(client)
+        match_iocs(client)
 
         return Response({'status': 'success'})
     except Exception as e:

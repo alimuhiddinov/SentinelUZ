@@ -1,7 +1,128 @@
-from .models import Process, Port, Vulnerability, VulnerabilityMatch
+from .models import (
+    Process, Port, Vulnerability, VulnerabilityMatch,
+    SuspiciousActivity, ThreatIntelIP, ThreatIntelHash,
+)
 from django.utils import timezone
 from django.db import IntegrityError
+from datetime import timedelta
 import re
+
+KNOWN_ATTACK_TOOLS = [
+    'mimikatz', 'pwdump', 'procdump', 'lazagne',
+    'ghostpack', 'psexec', 'bloodhound', 'cobalt',
+    'metasploit', 'meterpreter', 'empire', 'cobaltstrike',
+    'hacktools', 'sharphound', 'rubeus', 'certify',
+]
+
+RANSOMWARE_PRECURSORS = [
+    'vssadmin.exe',   # deletes shadow copies
+    'wbadmin.exe',    # deletes Windows backups
+    'bcdedit.exe',    # disables boot recovery
+    'cipher.exe',     # file encryption
+    'diskshadow.exe', # shadow copy manipulation
+]
+
+_ti_cache = {'ips': None, 'hashes': None, 'loaded_at': None}
+
+
+def _create_alert_deduped(client, alert_type, severity, description, ioc_key, proc):
+    """Create a SuspiciousActivity alert only if no matching alert exists."""
+    if SuspiciousActivity.objects.filter(
+        client=client, ioc_matched=ioc_key,
+    ).exists():
+        return
+    SuspiciousActivity.objects.create(
+        client=client,
+        type=alert_type,
+        severity=severity,
+        description=description,
+        process_name=proc.name if proc else '',
+        process_id=proc.pid if proc else None,
+        ioc_matched=ioc_key,
+        timestamp=timezone.now(),
+    )
+
+
+def match_iocs(client):
+    """Match processes against IoC lists and detect suspicious behavior."""
+    # Load TI data with 30-minute cache
+    now = timezone.now()
+    if (_ti_cache['loaded_at'] is None or
+            now - _ti_cache['loaded_at'] > timedelta(minutes=30)):
+        _ti_cache['ips'] = set(ThreatIntelIP.objects.filter(
+            is_active=True).values_list('ip_address', flat=True))
+        _ti_cache['hashes'] = set(ThreatIntelHash.objects.filter(
+            is_active=True).values_list('sha256_hash', flat=True))
+        _ti_cache['loaded_at'] = now
+
+    ip_set = _ti_cache['ips']
+    hash_set = _ti_cache['hashes']
+
+    processes = Process.objects.filter(client=client)
+    for proc in processes:
+        # 1. Hash match against TI database
+        if proc.sha256_hash and proc.sha256_hash in hash_set:
+            _create_alert_deduped(
+                client, 'HASH_MATCH', 'CRITICAL',
+                f'Known malware hash detected: {proc.name}. '
+                f'Hash matches threat intelligence database.',
+                proc.sha256_hash, proc,
+            )
+
+        # 2. Known attack tool by name
+        proc_lower = proc.name.lower()
+        for tool in KNOWN_ATTACK_TOOLS:
+            if tool in proc_lower:
+                _create_alert_deduped(
+                    client, 'KNOWN_ATTACK_TOOL', 'CRITICAL',
+                    f'Known attack tool detected: {proc.name}',
+                    f'tool:{proc.name}', proc,
+                )
+                break
+
+        # 3. Suspicious chain (Office/browser spawned LOLBin)
+        if proc.is_suspicious_chain:
+            _create_alert_deduped(
+                client, 'SUSPICIOUS_CHAIN', 'HIGH',
+                f'Suspicious process chain: {proc.parent_name} '
+                f'spawned {proc.name}',
+                f'chain:{proc.parent_name}:{proc.name}', proc,
+            )
+        # 5. LOLBin alone (no suspicious parent)
+        elif proc.is_lolbin and not proc.is_suspicious_chain:
+            _create_alert_deduped(
+                client, 'LOLBIN_DETECTED', 'LOW',
+                f'LOLBin process detected: {proc.name}',
+                f'lolbin:{proc.name}', proc,
+            )
+
+        # 4. Ransomware pre-encryption behavior
+        for precursor in RANSOMWARE_PRECURSORS:
+            if precursor in proc_lower:
+                if proc.is_suspicious_chain or proc.is_lolbin:
+                    _create_alert_deduped(
+                        client,
+                        'RANSOMWARE_PRECURSOR',
+                        'CRITICAL',
+                        f'Ransomware pre-encryption activity: '
+                        f'{proc.name} spawned by {proc.parent_name}. '
+                        f'Possible shadow copy deletion or '
+                        f'backup destruction detected.',
+                        f'ransomware:{proc.name}',
+                        proc,
+                    )
+                else:
+                    _create_alert_deduped(
+                        client,
+                        'RANSOMWARE_PRECURSOR',
+                        'HIGH',
+                        f'Suspicious ransomware indicator: '
+                        f'{proc.name} detected.',
+                        f'ransomware:{proc.name}',
+                        proc,
+                    )
+                break
+
 
 def analyze_vulnerabilities(client):
     """

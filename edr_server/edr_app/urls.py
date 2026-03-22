@@ -25,6 +25,7 @@ urlpatterns = [
     path('api/clients/<int:client_id>/kill_process/<int:process_id>/', views.kill_process, name='kill_process'),
     path('api/clients/<int:client_id>/command/', views.client_command, name='client_command'),
     path('api/commands/pending/', views.pending_commands, name='pending_commands'),
+    path('api/health/', views.health_check, name='health_check'),
 ]
 
 urlpatterns += router.urls

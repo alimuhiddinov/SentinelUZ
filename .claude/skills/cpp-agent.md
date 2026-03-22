@@ -30,7 +30,12 @@ Always use RAII wrapper for hAlg and hHash handles
 const std::set<std::wstring> LOLBINS = {
   L"cmd.exe", L"powershell.exe", L"pwsh.exe", L"wscript.exe",
   L"cscript.exe", L"mshta.exe", L"regsvr32.exe", L"rundll32.exe",
-  L"certutil.exe", L"msiexec.exe", L"wmic.exe", L"bitsadmin.exe"
+  L"certutil.exe", L"msiexec.exe", L"wmic.exe", L"bitsadmin.exe",
+  L"vssadmin.exe",    // ransomware: deletes shadow copies
+  L"wbadmin.exe",     // ransomware: deletes Windows backups
+  L"bcdedit.exe",     // ransomware: disables boot recovery
+  L"cipher.exe",      // ransomware: file encryption utility
+  L"diskshadow.exe"   // ransomware: shadow copy manipulation
 };
 const std::set<std::wstring> SUSPICIOUS_PARENTS = {
   L"WINWORD.EXE", L"EXCEL.EXE", L"POWERPNT.EXE",
@@ -40,6 +45,13 @@ const std::set<std::wstring> SUSPICIOUS_PARENTS = {
 is_lolbin = LOLBINS.count(lowercase_name) > 0;
 is_suspicious_chain = is_lolbin &&
   SUSPICIOUS_PARENTS.count(uppercase_parent) > 0;
+
+## Ransomware pre-encryption indicators
+These are in LOLBINS list above but treated as CRITICAL
+on server side when detected. The C++ agent flags them
+as is_lolbin=true and sends parent_name for context.
+Server-side match_iocs() handles RANSOMWARE_PRECURSOR
+alert generation based on process name.
 
 ## Network connections via GetExtendedTcpTable
 #include <iphlpapi.h>  // link: -liphlpapi in CMakeLists.txt
@@ -83,6 +95,9 @@ target_link_libraries(edr_client
   iphlpapi
   winhttp
 )
+
+
+
 
 ## Key rules
 - RAII for ALL Windows handles — CloseHandle in destructor or finally
