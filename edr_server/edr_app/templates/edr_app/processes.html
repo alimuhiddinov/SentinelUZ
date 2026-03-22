@@ -1,0 +1,126 @@
+{% extends 'edr_app/base.html' %}
+
+{% block title %}Processes{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <h1 class="mb-4">Running Processes</h1>
+
+    <div class="card">
+        <div class="card-header">
+            <div class="d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-cpu"></i> Process List
+                </h5>
+                <div class="btn-group">
+                    <button type="button" class="btn btn-primary" onclick="refreshData()">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover" id="processTable">
+                    <thead>
+                        <tr>
+                            <th>Device</th>
+                            <th>PID</th>
+                            <th>Name</th>
+                            <th>Path</th>
+                            <th>Command Line</th>
+                            <th>Timestamp</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for process in processes %}
+                            <tr>
+                                <td>{{ process.client.hostname }}</td>
+                                <td>{{ process.pid }}</td>
+                                <td>{{ process.name }}</td>
+                                <td>{{ process.path }}</td>
+                                <td>{{ process.command_line }}</td>
+                                <td>{{ process.timestamp }}</td>
+                                <td>
+                                    <button class="btn btn-danger btn-sm" onclick="killProcess({{ process.client.id }}, {{ process.pid }})">
+                                        <i class="fas fa-times"></i> Kill
+                                    </button>
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr>
+                                <td colspan="8" class="text-center">No processes found</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function refreshData() {
+    location.reload();
+}
+
+function killProcess(clientId, processId) {
+    if (confirm('Are you sure you want to terminate this process?')) {
+        const button = event.target.closest('button');
+        button.disabled = true;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Terminating...';
+
+        fetch(`/api/clients/${clientId}/kill_process/${processId}/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+            },
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlert('success', data.message);
+                // Refresh the page after a short delay
+                setTimeout(() => location.reload(), 1500);
+            } else {
+                button.disabled = false;
+                button.innerHTML = '<i class="fas fa-times"></i> Kill';
+                
+                if (data.requires_manual) {
+                    showAlert('warning', data.error + ' Please try terminating the process manually.');
+                } else {
+                    showAlert('error', data.error);
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            button.disabled = false;
+            button.innerHTML = '<i class="fas fa-times"></i> Kill';
+            showAlert('error', 'Failed to terminate process. Please try again.');
+        });
+    }
+}
+
+function showAlert(type, message) {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+    
+    const container = document.querySelector('.container');
+    container.insertBefore(alertDiv, container.firstChild);
+    
+    // Auto-dismiss after 5 seconds
+    setTimeout(() => {
+        alertDiv.classList.remove('show');
+        setTimeout(() => alertDiv.remove(), 150);
+    }, 5000);
+}
+</script>
+{% endblock %}

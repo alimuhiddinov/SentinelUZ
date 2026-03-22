@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ client.hostname }} Details{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="mb-0">Device Details</h4>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <p><strong>Hostname:</strong> {{ client.hostname }}</p>
+                            <p><strong>IP Address:</strong> {{ client.ip_address }}</p>
+                        </div>
+                        <div class="col-md-6">
+                            <p><strong>Last Seen:</strong> {{ client.last_seen|date:"Y-m-d H:i:s" }}</p>
+                            <p><strong>Status:</strong> 
+                                {% if client.last_seen|timesince < "5 minutes" %}
+                                <span class="badge bg-success">Active</span>
+                                {% else %}
+                                <span class="badge bg-danger">Inactive</span>
+                                {% endif %}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% include 'process_table.html' %}
+    {% include 'port_table.html' %}
+    {% include 'alert_table.html' %}
+    {% include 'log_table.html' %}
+    {% include 'vulnerability_table.html' %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    $('#processesTable').DataTable({
+        pageLength: 10,
+        lengthMenu: [[10, 25, 50, -1], [10, 25, 50, "All"]],
+        order: [[0, 'desc']], // Sort by PID by default
+        language: {
+            search: "Filter processes:"
+        }
+    });
+
+    $('#portsTable').DataTable({
+        pageLength: 10,
+        lengthMenu: [[10, 25, 50, -1], [10, 25, 50, "All"]],
+        order: [[0, 'asc']], // Sort by port number by default
+        language: {
+            search: "Filter ports:"
+        }
+    });
+
+    // Handle entry selector changes
+    document.querySelectorAll('.entries-select').forEach(select => {
+        select.addEventListener('change', function() {
+            const tableId = this.getAttribute('data-table');
+            const table = tableId === 'processes-table' ? $('#processesTable') : $('#portsTable');
+            table.DataTable().page.len(parseInt(this.value)).draw();
+        });
+    });
+
+    // Add client filtering functionality
+    $('#processClientFilter').on('change', function() {
+        const selectedClient = this.value;
+        $('#processesTable').DataTable()
+            .column(6) // Client column index
+            .search(selectedClient)
+            .draw();
+    });
+
+    $('#portClientFilter').on('change', function() {
+        const selectedClient = this.value;
+        $('#portsTable').DataTable()
+            .column(7) // Client column index
+            .search(selectedClient)
+            .draw();
+    });
+});
+</script>
+{% endblock %}

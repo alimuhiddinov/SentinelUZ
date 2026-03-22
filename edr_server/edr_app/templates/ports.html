@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+
+{% block title %}Open Ports{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Open Ports</h2>
+        <div class="d-flex align-items-center">
+            <div class="me-3">
+                <label for="clientFilter" class="me-2">Client:</label>
+                <select id="clientFilter" class="form-select form-select-sm d-inline-block w-auto">
+                    <option value="">All Clients</option>
+                    {% for client in clients %}
+                    <option value="{{ client.hostname }}">{{ client.hostname }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table id="portsTable" class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Client</th>
+                            <th>Port</th>
+                            <th>Protocol</th>
+                            <th>State</th>
+                            <th>Process</th>
+                            <th>Process ID</th>
+                            <th>Service</th>
+                            <th>Version</th>
+                            <th>Risk Level</th>
+                            <th>Last Updated</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for port in ports %}
+                        <tr>
+                            <td>{{ port.client.hostname }}</td>
+                            <td>{{ port.port_number }}</td>
+                            <td>{{ port.protocol }}</td>
+                            <td>{{ port.state }}</td>
+                            <td>{{ port.process_name }}</td>
+                            <td>{{ port.process_id }}</td>
+                            <td>{{ port.service_name|default:"Unknown" }}</td>
+                            <td>{{ port.service_version|default:"Unknown" }}</td>
+                            <td>
+                                {% if port.risk_level == 'high' %}
+                                    <span class="badge bg-danger">High</span>
+                                {% elif port.risk_level == 'medium' %}
+                                    <span class="badge bg-warning">Medium</span>
+                                {% else %}
+                                    <span class="badge bg-success">Low</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ port.timestamp }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="10" class="text-center">No open ports found</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    const portsTable = $('#portsTable').DataTable({
+        pageLength: 25,
+        lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
+        order: [[9, 'desc'], [1, 'asc']], // Sort by risk level desc, then by port number asc
+        language: {
+            search: "Filter ports:"
+        }
+    });
+
+    // Add client filtering functionality
+    $('#clientFilter').on('change', function() {
+        const selectedClient = this.value;
+        portsTable
+            .column(0) // Client column index
+            .search(selectedClient)
+            .draw();
+    });
+});
+</script>
+{% endblock %}
