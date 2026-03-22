@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Client, Process, Port, SuspiciousActivity, Vulnerability
+from .models import Client, Process, Port, SuspiciousActivity, Vulnerability, ThreatIntelIP, ThreatIntelHash
 
 # Register your models here.
 
@@ -48,3 +48,15 @@ class VulnerabilityAdmin(admin.ModelAdmin):
     list_display = ('cve_id', 'severity', 'published_date')
     list_filter = ('severity',)
     search_fields = ('cve_id', 'description')
+
+@admin.register(ThreatIntelIP)
+class ThreatIntelIPAdmin(admin.ModelAdmin):
+    list_display = ('ip_address', 'source', 'threat_type', 'is_active', 'added_date')
+    list_filter = ('source', 'is_active')
+    search_fields = ('ip_address',)
+
+@admin.register(ThreatIntelHash)
+class ThreatIntelHashAdmin(admin.ModelAdmin):
+    list_display = ('sha256_hash', 'malware_name', 'source', 'is_active', 'added_date')
+    list_filter = ('source', 'is_active')
+    search_fields = ('sha256_hash', 'malware_name')

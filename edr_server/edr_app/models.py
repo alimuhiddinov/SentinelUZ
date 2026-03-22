@@ -69,6 +69,11 @@ class Process(models.Model):
     command_line = models.TextField(blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)
     version = models.CharField(max_length=50, blank=True, null=True)
+    parent_pid = models.IntegerField(null=True, blank=True)
+    sha256_hash = models.CharField(max_length=64, blank=True, null=True)
+    is_lolbin = models.BooleanField(default=False)
+    is_suspicious_chain = models.BooleanField(default=False)
+    parent_name = models.CharField(max_length=255, blank=True, null=True)
 
     def __str__(self):
         return f"{self.name} (PID: {self.pid})"
@@ -94,6 +99,14 @@ class SuspiciousActivity(models.Model):
     process_name = models.CharField(max_length=255, blank=True)
     process_id = models.IntegerField(null=True, blank=True)
     timestamp = models.DateTimeField()
+    severity = models.CharField(
+        max_length=20,
+        choices=[('CRITICAL', 'Critical'), ('HIGH', 'High'),
+                 ('MEDIUM', 'Medium'), ('LOW', 'Low')],
+        default='LOW'
+    )
+    ioc_matched = models.CharField(max_length=255, blank=True, null=True)
+    score = models.IntegerField(default=0)
 
     def __str__(self):
         return f"{self.type} - {self.description[:50]}"
@@ -191,3 +204,31 @@ class WindowsEventLog(models.Model):
 
     def __str__(self):
         return f"{self.source} - {self.event_id} - {self.timestamp}"
+
+
+class ThreatIntelIP(models.Model):
+    ip_address = models.GenericIPAddressField(unique=True)
+    source = models.CharField(max_length=50)
+    threat_type = models.CharField(max_length=100, blank=True)
+    added_date = models.DateTimeField(auto_now_add=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        indexes = [models.Index(fields=['ip_address'])]
+
+    def __str__(self):
+        return f"{self.ip_address} ({self.source})"
+
+
+class ThreatIntelHash(models.Model):
+    sha256_hash = models.CharField(max_length=64, unique=True)
+    malware_name = models.CharField(max_length=255, blank=True)
+    source = models.CharField(max_length=50)
+    added_date = models.DateTimeField(auto_now_add=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        indexes = [models.Index(fields=['sha256_hash'])]
+
+    def __str__(self):
+        return f"{self.sha256_hash[:16]}... ({self.malware_name})"
