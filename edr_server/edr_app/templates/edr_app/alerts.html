@@ -1,70 +1,346 @@
 {% extends 'edr_app/base.html' %}
 
-{% block title %}Security Alerts{% endblock %}
+{% block title %}Alerts — SentinelUZ{% endblock %}
+
+{% block extra_css %}
+    /* ── Alert cards ── */
+    .alerts-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+    }
+    .alert-card {
+        border-radius: 4px;
+        padding: 16px 20px;
+        margin-bottom: 12px;
+        border: 1px solid var(--border-subtle);
+        border-left: 4px solid var(--border-subtle);
+        background: var(--bg-surface);
+        transition: border-color 0.15s, background 0.15s;
+    }
+    .alert-card:hover {
+        background: var(--bg-elevated);
+    }
+    .alert-card.sev-critical {
+        background: var(--critical-bg);
+        border-color: var(--critical-border);
+        border-left-color: var(--critical);
+    }
+    .alert-card.sev-critical:hover { background: #3a1a1a; }
+    .alert-card.sev-high {
+        background: var(--high-bg);
+        border-color: var(--high-border);
+        border-left-color: var(--high);
+    }
+    .alert-card.sev-high:hover { background: #3a2010; }
+    .alert-card.sev-medium {
+        background: var(--medium-bg);
+        border-color: var(--medium-border);
+        border-left-color: var(--medium);
+    }
+    .alert-card.sev-medium:hover { background: #3a3010; }
+    .alert-card.sev-low {
+        background: var(--low-bg);
+        border-color: var(--low-border);
+        border-left-color: var(--low);
+    }
+    .alert-card.sev-low:hover { background: #152040; }
+
+    .alert-card-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 10px;
+    }
+    .alert-card-header .alert-type {
+        font-family: var(--font-ui);
+        font-size: var(--text-sm);
+        font-weight: 500;
+        color: var(--text-primary);
+    }
+    .alert-card-header .alert-device {
+        font-family: var(--font-mono);
+        font-size: var(--text-xs);
+        color: var(--text-secondary);
+    }
+    .alert-card-header .alert-device::before {
+        content: '·';
+        margin-right: 10px;
+        color: var(--text-muted);
+    }
+    .alert-card-header .spacer {
+        flex: 1;
+    }
+    .count-badge {
+        background: var(--bg-elevated);
+        color: var(--text-secondary);
+        font-family: var(--font-mono);
+        font-size: var(--text-xs);
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 10px;
+        flex-shrink: 0;
+    }
+    .count-badge.count-high { color: var(--critical); background: var(--critical-bg); }
+
+    .alert-card-body {
+        margin: 12px 0;
+    }
+    .alert-description {
+        font-family: var(--font-ui);
+        font-size: var(--text-sm);
+        color: var(--text-secondary);
+        line-height: 1.6;
+        margin-bottom: 8px;
+    }
+    .alert-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        font-size: var(--text-xs);
+        color: var(--text-muted);
+    }
+    .alert-meta .meta-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+    .alert-meta .meta-label {
+        color: var(--text-muted);
+    }
+    .alert-meta .meta-value {
+        font-family: var(--font-mono);
+        color: var(--text-secondary);
+    }
+
+    .alert-card-footer {
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid var(--border-subtle);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .alert-timestamps {
+        display: flex;
+        gap: 16px;
+        font-family: var(--font-ui);
+        font-size: var(--text-xs);
+        color: var(--text-muted);
+    }
+    .alert-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+
+    .empty-card {
+        text-align: center;
+        padding: 48px 16px;
+        color: var(--text-muted);
+        font-size: var(--text-sm);
+    }
+
+    /* ── Expand button ── */
+    .expand-btn {
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-default);
+        border-radius: 3px;
+        padding: 3px 10px;
+        font-family: var(--font-ui);
+        font-size: var(--text-xs);
+        color: var(--text-secondary);
+        cursor: pointer;
+        transition: all 0.15s;
+    }
+    .expand-btn:hover {
+        background: var(--bg-selected);
+        color: var(--text-primary);
+        border-color: var(--accent);
+    }
+    .expand-btn.open {
+        color: var(--accent);
+        border-color: var(--accent);
+    }
+
+    /* ── Context panel (inside card) ── */
+    .alert-context-wrap {
+        margin-top: 12px;
+        display: none;
+    }
+    .alert-context-wrap.open {
+        display: block;
+    }
+    .alert-context {
+        background: var(--bg-page);
+        border-radius: 4px;
+        padding: 12px;
+    }
+    .context-loading {
+        font-family: var(--font-ui);
+        font-size: var(--text-xs);
+        color: var(--text-muted);
+        padding: 8px 0;
+    }
+
+    /* ── GIB-style context tree ── */
+    .context-ioc {
+        font-family: var(--font-ui);
+        font-size: var(--text-xs);
+        color: var(--text-secondary);
+        margin-bottom: 8px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--border-subtle);
+    }
+    .context-tree {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+    }
+    .ctx-row {
+        display: flex;
+        align-items: center;
+        min-height: 28px;
+        border-radius: 3px;
+        overflow: hidden;
+    }
+    .ctx-bar {
+        width: 3px;
+        min-height: 28px;
+        flex-shrink: 0;
+        background: transparent;
+        margin-right: 8px;
+    }
+    .ctx-bar.bar-critical { background: var(--critical); }
+    .ctx-bar.bar-lolbin { background: var(--lolbin); }
+    .ctx-row.ctx-flagged { background: var(--critical-bg); }
+    .ctx-row.ctx-suspicious { background: var(--critical-bg); }
+    .ctx-row.ctx-lolbin { background: var(--lolbin-bg); }
+    .ctx-row:hover { background: var(--bg-elevated); }
+    .ctx-row.ctx-flagged:hover { background: #3a1a1a; }
+    .ctx-row.ctx-lolbin:hover { background: #3a2010; }
+    .ctx-content {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex: 1;
+        padding: 4px 8px;
+        gap: 8px;
+        overflow: hidden;
+    }
+    .ctx-main {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        overflow: hidden;
+        flex: 1;
+    }
+    .ctx-connector {
+        font-family: var(--font-mono);
+        font-size: var(--text-xs);
+        color: var(--border-bright);
+        flex-shrink: 0;
+    }
+    .ctx-pid {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: #f59e0b;
+        flex-shrink: 0;
+        min-width: 42px;
+    }
+    .ctx-name {
+        font-family: var(--font-ui);
+        font-size: var(--text-sm);
+        font-weight: 500;
+        color: var(--text-primary);
+        white-space: nowrap;
+    }
+    .ctx-name.suspicious { color: var(--critical); }
+    .ctx-name.lolbin { color: var(--lolbin); }
+    .ctx-cmd {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--text-muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 400px;
+    }
+    .ctx-alert-badge {
+        font-size: 14px;
+        flex-shrink: 0;
+        color: var(--critical);
+    }
+{% endblock %}
 
 {% block content %}
-<div class="container-fluid">
-    <h1 class="mb-4">Security Alerts</h1>
+<h1 class="page-header">Security Alerts</h1>
 
-    <div class="card">
-        <div class="card-header">
-            <div class="d-flex justify-content-between align-items-center">
-                <h5 class="card-title mb-0">
-                    <i class="bi bi-exclamation-triangle"></i> Alert List
-                </h5>
-                <div class="btn-group">
-                    <button type="button" class="btn btn-primary" onclick="refreshData()">
-                        <i class="bi bi-arrow-clockwise"></i> Refresh
-                    </button>
+<div class="card">
+    <div class="card-header">
+        <span>Alert List</span>
+        <button class="btn btn-sm" onclick="location.reload()">Refresh</button>
+    </div>
+    <div class="card-body">
+        <div class="alerts-list">
+            {% for alert in alerts %}
+            <div class="alert-card sev-{{ alert.severity|lower }}">
+                <!-- Header: severity badge, type, device, count -->
+                <div class="alert-card-header">
+                    <span class="badge badge-{{ alert.severity|lower }}">{{ alert.severity }}</span>
+                    <span class="alert-type">{{ alert.type }}</span>
+                    <span class="alert-device">{{ alert.client.hostname }}</span>
+                    <span class="spacer"></span>
+                    {% if alert.event_count > 1 %}
+                        <span class="count-badge {% if alert.event_count > 10 %}count-high{% endif %}">{{ alert.event_count }}&times;</span>
+                    {% endif %}
                 </div>
+
+                <!-- Body: description, process, IoC -->
+                <div class="alert-card-body">
+                    <div class="alert-description">{{ alert.description }}</div>
+                    <div class="alert-meta">
+                        {% if alert.process_name %}
+                        <span class="meta-item">
+                            <span class="meta-label">Process:</span>
+                            <span class="meta-value">{{ alert.process_name }}{% if alert.process_id %} (PID {{ alert.process_id }}){% endif %}</span>
+                        </span>
+                        {% endif %}
+                        {% if alert.ioc_matched %}
+                        <span class="meta-item">
+                            <span class="meta-label">IoC:</span>
+                            <span class="meta-value">{{ alert.ioc_matched|truncatechars:40 }}</span>
+                        </span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Footer: timestamps + actions -->
+                <div class="alert-card-footer">
+                    <div class="alert-timestamps">
+                        <span>First: <span data-iso="{{ alert.timestamp|date:'c' }}">{{ alert.timestamp|date:"Y-m-d H:i" }}</span></span>
+                        <span>Last: <span data-iso="{{ alert.last_seen|date:'c' }}">{{ alert.last_seen|date:"Y-m-d H:i" }}</span></span>
+                    </div>
+                    <div class="alert-actions">
+                        <a href="{% url 'alert_detail' alert.id %}" class="btn btn-sm btn-primary">Investigate</a>
+                        {% if alert.process_id %}
+                        <button class="expand-btn" onclick="toggleContext(this, {{ alert.id }})" title="Show process chain">&#9654; Chain</button>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Expandable chain context -->
+                {% if alert.process_id %}
+                <div class="alert-context-wrap" id="context-wrap-{{ alert.id }}">
+                    <div class="alert-context" id="context-{{ alert.id }}">
+                        <div class="context-loading">Loading chain...</div>
+                    </div>
+                </div>
+                {% endif %}
             </div>
-        </div>
-        <div class="card-body">
-            <div class="table-responsive">
-                <table class="table table-hover" id="alertTable">
-                    <thead>
-                        <tr>
-                            <th>Device</th>
-                            <th>Type</th>
-                            <th>Description</th>
-                            <th>Process</th>
-                            <th>Timestamp</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for alert in alerts %}
-                            <tr>
-                                <td>{{ alert.client.hostname }}</td>
-                                <td>
-                                    <span class="badge bg-danger">{{ alert.type }}</span>
-                                </td>
-                                <td>{{ alert.description }}</td>
-                                <td>
-                                    {% if alert.process_name %}
-                                        {{ alert.process_name }}
-                                        {% if alert.process_id %}
-                                            (PID: {{ alert.process_id }})
-                                        {% endif %}
-                                    {% else %}
-                                        -
-                                    {% endif %}
-                                </td>
-                                <td>{{ alert.timestamp }}</td>
-                                <td>
-                                    <a href="{% url 'device_detail' alert.client.id %}" class="btn btn-sm btn-primary">
-                                        <i class="bi bi-eye"></i> View Device
-                                    </a>
-                                </td>
-                            </tr>
-                        {% empty %}
-                            <tr>
-                                <td colspan="6" class="text-center">No alerts found</td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+            {% empty %}
+            <div class="empty-card">No alerts found</div>
+            {% endfor %}
         </div>
     </div>
 </div>
@@ -72,8 +348,115 @@
 
 {% block extra_js %}
 <script>
-function refreshData() {
-    location.reload();
+var contextCache = {};
+
+function toggleContext(btn, alertId) {
+    var wrap = document.getElementById('context-wrap-' + alertId);
+    var panel = document.getElementById('context-' + alertId);
+
+    if (wrap.classList.contains('open')) {
+        wrap.classList.remove('open');
+        btn.innerHTML = '&#9654; Chain';
+        btn.classList.remove('open');
+        return;
+    }
+
+    wrap.classList.add('open');
+    btn.innerHTML = '&#9660; Chain';
+    btn.classList.add('open');
+
+    if (contextCache[alertId]) {
+        panel.innerHTML = renderContextTree(contextCache[alertId]);
+        return;
+    }
+
+    fetch('/api/alerts/' + alertId + '/context/')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            contextCache[alertId] = data;
+            panel.innerHTML = renderContextTree(data);
+        })
+        .catch(function() {
+            panel.innerHTML = '<div class="context-loading">Failed to load chain.</div>';
+        });
+}
+
+function renderContextTree(data) {
+    if (!data.processes || data.processes.length === 0) {
+        return '<div class="context-loading">No process data available for this alert.</div>';
+    }
+
+    var map = {};
+    var roots = [];
+    data.processes.forEach(function(p) {
+        map[p.pid] = { pid: p.pid, parent_pid: p.parent_pid, name: p.name, flagged: p.flagged, lolbin: p.lolbin, suspicious: p.suspicious, hash_short: p.hash_short, hash_full: p.hash_full, path: p.path, cmd: p.cmd, children: [] };
+    });
+    data.processes.forEach(function(p) {
+        if (p.parent_pid && map[p.parent_pid]) {
+            map[p.parent_pid].children.push(map[p.pid]);
+        } else {
+            roots.push(map[p.pid]);
+        }
+    });
+
+    var html = '';
+    if (data.ioc) {
+        html += '<div class="context-ioc">IOC matched: <span class="mono">' + escapeCtx(data.ioc) + '</span></div>';
+    }
+    html += '<div class="context-tree">';
+    html += renderContextNodes(roots, 0, data.flagged_pid);
+    html += '</div>';
+    return html;
+}
+
+function renderContextNodes(nodes, depth, flaggedPid) {
+    var html = '';
+    nodes.forEach(function(node, i) {
+        var isLast = i === nodes.length - 1;
+        var isFlagged = node.pid === flaggedPid;
+        var indent = depth * 20;
+
+        var rowClass = 'ctx-row';
+        if (isFlagged) rowClass += ' ctx-flagged';
+        else if (node.suspicious) rowClass += ' ctx-suspicious';
+        else if (node.lolbin) rowClass += ' ctx-lolbin';
+
+        var barClass = 'ctx-bar';
+        if (node.suspicious || isFlagged) barClass += ' bar-critical';
+        else if (node.lolbin) barClass += ' bar-lolbin';
+
+        var connector = depth === 0 ? '' : '<span class="ctx-connector">' + (isLast ? '\u2514' : '\u251C') + '</span>';
+        var pid = '<span class="ctx-pid">' + node.pid + '</span>';
+
+        var nameClass = (node.suspicious || isFlagged) ? 'ctx-name suspicious' : node.lolbin ? 'ctx-name lolbin' : 'ctx-name';
+        var name = '<span class="' + nameClass + '">' + escapeCtx(node.name) + '</span>';
+
+        var cmd = node.cmd ? '<span class="ctx-cmd">' + escapeCtx(node.cmd) + '</span>' : '';
+
+        var hashHtml = '';
+        if (isFlagged && node.hash_short) {
+            hashHtml = '<span class="hash" onclick="copyHash(\'' + node.hash_full + '\')" title="' + node.hash_full + '">' + node.hash_short + '...</span>';
+        }
+
+        var alertBadge = isFlagged ? '<span class="ctx-alert-badge">\u26A0</span>' : '';
+
+        html += '<div class="' + rowClass + '" style="padding-left:' + indent + 'px">'
+            + '<div class="' + barClass + '"></div>'
+            + '<div class="ctx-content"><div class="ctx-main">'
+            + connector + pid + name + cmd + hashHtml
+            + '</div>' + alertBadge + '</div></div>';
+
+        if (node.children && node.children.length > 0) {
+            html += renderContextNodes(node.children, depth + 1, flaggedPid);
+        }
+    });
+    return html;
+}
+
+function escapeCtx(str) {
+    var d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
 }
 </script>
 {% endblock %}
