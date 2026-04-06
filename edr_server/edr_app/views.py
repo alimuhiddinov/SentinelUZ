@@ -7,17 +7,22 @@ from rest_framework.views import APIView
 from rest_framework.authentication import SessionAuthentication, BasicAuthentication, TokenAuthentication
 from django.contrib.auth.decorators import login_required
 from django.contrib.admin.views.decorators import staff_member_required
+from django.views.decorators.http import require_POST
 from django.conf import settings
 from django.utils import timezone
 from datetime import timedelta, datetime
 import requests
 import json
-from .models import Client, Process, Port, SuspiciousActivity, Vulnerability, VulnerabilityMatch, Log, WindowsEventLog
+from .models import (
+    Client, Process, Port, SuspiciousActivity, Vulnerability,
+    VulnerabilityMatch, Log, WindowsEventLog,
+    ThreatIntelIP, ThreatIntelHash, ExclusionRule,
+)
 from .serializers import (
     ClientSerializer, ProcessSerializer, PortSerializer,
     SuspiciousActivitySerializer, VulnerabilitySerializer, LogSerializer, WindowsEventLogSerializer
 )
-from .utils import analyze_vulnerabilities, match_iocs
+from .utils import analyze_vulnerabilities, match_iocs, _ti_cache
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.http import HttpResponse, JsonResponse
@@ -75,7 +80,7 @@ def device_detail(request, device_id):
     # Get recent data, excluding PID 0
     processes = Process.objects.filter(client=client).exclude(pid=0).order_by('-timestamp')[:50]
     ports = Port.objects.filter(client=client).order_by('-timestamp')[:50]
-    alerts = SuspiciousActivity.objects.filter(client=client).order_by('-timestamp')[:20]
+    alerts = SuspiciousActivity.objects.filter(client=client).order_by('-last_seen')[:20]
     logs = Log.objects.filter(client=client).order_by('-timestamp')[:100]
     
     # Analyze vulnerabilities
@@ -112,6 +117,31 @@ def processes(request):
     })
 
 @login_required
+def process_tree(request, device_id):
+    client = get_object_or_404(Client, id=device_id)
+    processes = Process.objects.filter(client=client).exclude(pid=0).order_by('parent_pid', 'pid')
+
+    processes_json = json.dumps([{
+        'pid':                 p.pid,
+        'parent_pid':          p.parent_pid,
+        'name':                p.name,
+        'path':                p.path or '',
+        'sha256_hash':         p.sha256_hash or '',
+        'is_lolbin':           p.is_lolbin,
+        'is_suspicious_chain': p.is_suspicious_chain,
+        'parent_name':         p.parent_name or '',
+        'command_line':        p.command_line or '',
+    } for p in processes])
+
+    return render(request, 'edr_app/process_tree.html', {
+        'client':          client,
+        'processes_json':  processes_json,
+        'process_count':   processes.count(),
+        'lolbin_count':    processes.filter(is_lolbin=True).count(),
+        'suspicious_count': processes.filter(is_suspicious_chain=True).count(),
+    })
+
+@login_required
 def ports(request):
     ports = Port.objects.select_related('client').order_by('-timestamp')
     clients = Client.objects.all().order_by('hostname')
@@ -122,11 +152,166 @@ def ports(request):
 
 @login_required
 def alerts(request):
-    alerts = SuspiciousActivity.objects.all().order_by('-timestamp')[:100]
+    alerts = SuspiciousActivity.objects.all().order_by('-last_seen')[:100]
     context = {
         'alerts': alerts,
     }
     return render(request, 'edr_app/alerts.html', context)
+
+@login_required
+def alert_process_context(request, alert_id):
+    """Return process chain context for an alert (JSON)."""
+    alert = get_object_or_404(SuspiciousActivity, id=alert_id)
+    client = alert.client
+    flagged_pid = alert.process_id
+
+    if not flagged_pid:
+        # Try to get from linked events
+        proc_event = alert.events.filter(process__isnull=False).first()
+        if proc_event:
+            flagged_pid = proc_event.process.pid
+
+    if not flagged_pid:
+        return JsonResponse({'processes': [], 'flagged_pid': None})
+
+    all_processes = Process.objects.filter(client=client)
+
+    # Collect ancestors (up 3 levels) + flagged + children
+    pids_to_include = {flagged_pid}
+
+    current_pid = flagged_pid
+    for _ in range(3):
+        proc = all_processes.filter(pid=current_pid).first()
+        if proc and proc.parent_pid:
+            pids_to_include.add(proc.parent_pid)
+            current_pid = proc.parent_pid
+        else:
+            break
+
+    children = all_processes.filter(parent_pid=flagged_pid).values_list('pid', flat=True)
+    pids_to_include.update(children)
+
+    processes = all_processes.filter(pid__in=pids_to_include).order_by('parent_pid', 'pid')
+
+    data = []
+    for p in processes:
+        item = {
+            'pid':        p.pid,
+            'parent_pid': p.parent_pid,
+            'name':       p.name,
+            'flagged':    p.pid == flagged_pid,
+        }
+        if p.is_lolbin:
+            item['lolbin'] = True
+        if p.is_suspicious_chain:
+            item['suspicious'] = True
+        if p.sha256_hash:
+            item['hash_short'] = p.sha256_hash[:16]
+            item['hash_full'] = p.sha256_hash
+        if p.path:
+            item['path'] = p.path
+        if p.command_line:
+            item['cmd'] = p.command_line
+        data.append(item)
+
+    return JsonResponse({
+        'processes':   data,
+        'flagged_pid': flagged_pid,
+        'alert_type':  alert.type,
+        'ioc':         alert.ioc_matched or '',
+    })
+
+@login_required
+def alert_detail(request, alert_id):
+    alert = get_object_or_404(
+        SuspiciousActivity.objects.select_related('client'), id=alert_id)
+    related_alerts = []
+    if alert.correlation_id:
+        related_alerts = SuspiciousActivity.objects.filter(
+            correlation_id=alert.correlation_id
+        ).exclude(id=alert_id).order_by('-timestamp')[:10]
+    return render(request, 'edr_app/alert_detail.html', {
+        'alert': alert,
+        'related_alerts': related_alerts,
+        'event_count': alert.events.count(),
+        'client': alert.client,
+    })
+
+@login_required
+def alert_events_api(request, alert_id):
+    from .models import Event
+    alert = get_object_or_404(SuspiciousActivity, id=alert_id)
+    events = alert.events.select_related('process', 'port').order_by('timestamp')
+    data = []
+    for e in events:
+        item = {
+            'id': e.id,
+            'event_type': e.event_type,
+            'display_name': e.display_name,
+            'timestamp': e.timestamp.isoformat(),
+            'raw_data': json.loads(e.raw_data) if e.raw_data else {},
+        }
+        if e.process:
+            item['process'] = {
+                'pid': e.process.pid, 'name': e.process.name,
+                'path': e.process.path or '',
+                'parent_pid': e.process.parent_pid,
+                'is_lolbin': e.process.is_lolbin,
+                'is_suspicious_chain': e.process.is_suspicious_chain,
+            }
+        if e.port:
+            item['port'] = {
+                'remote_ip': e.port.remote_ip or '',
+                'remote_port': e.port.remote_port,
+                'state': e.port.state or '',
+                'process_name': e.port.process_name or '',
+            }
+        data.append(item)
+    return JsonResponse({'events': data, 'event_count': len(data), 'alert_id': alert_id})
+
+@login_required
+def alert_network_context(request, alert_id):
+    alert = get_object_or_404(SuspiciousActivity, id=alert_id)
+    window_start = alert.timestamp - timedelta(minutes=2)
+    window_end = alert.last_seen + timedelta(minutes=2)
+
+    ports = list(Port.objects.filter(
+        client=alert.client,
+        timestamp__gte=window_start,
+        timestamp__lte=window_end,
+    ).order_by('-timestamp')[:50])
+
+    if alert.process_id:
+        pid_ports = list(Port.objects.filter(
+            client=alert.client, process_id=alert.process_id,
+        ).order_by('-timestamp')[:20])
+        seen = {p.id for p in ports}
+        for p in pid_ports:
+            if p.id not in seen:
+                ports.append(p)
+                seen.add(p.id)
+        ports = ports[:50]
+
+    ip_set = _ti_cache.get('ips') or set()
+    data = [{
+        'remote_ip': p.remote_ip or '', 'remote_port': p.remote_port,
+        'local_ip': p.local_ip or '', 'local_port': p.local_port,
+        'state': p.state or '', 'process_id': p.process_id,
+        'process_name': p.process_name or '',
+        'timestamp': p.timestamp.isoformat(),
+        'is_blacklisted': (p.remote_ip or '') in ip_set,
+    } for p in ports]
+
+    return JsonResponse({'connections': data, 'count': len(data)})
+
+@login_required
+def alert_acknowledge(request, alert_id):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    alert = get_object_or_404(SuspiciousActivity, id=alert_id)
+    alert.is_acknowledged = True
+    alert.save(update_fields=['is_acknowledged'])
+    return JsonResponse({'status': 'ok'})
 
 @login_required
 def vulnerabilities(request):
@@ -368,57 +553,55 @@ def upload_data(request):
         client.last_seen = timezone.now()
         client.save()
 
-        # Process the reported processes
-        if 'processes' in data:
-            # First validate all process data
-            valid_processes = []
-            for proc_data in data['processes']:
-                if all(key in proc_data for key in ['pid', 'name']):
-                    valid_processes.append(proc_data)
-            
-            # Only delete old processes if we have valid new data
-            if valid_processes:
-                Process.objects.filter(client=client).delete()  # Clear old processes
-                for proc_data in valid_processes:
+        with transaction.atomic():
+            # Handle terminated processes
+            if 'terminatedPids' in data:
+                terminated = data['terminatedPids']
+                if terminated:
+                    Process.objects.filter(client=client, pid__in=terminated).delete()
+
+            # Process the reported processes (delta: only new ones)
+            if 'processes' in data:
+                for proc_data in data['processes']:
+                    if not all(key in proc_data for key in ['pid', 'name']):
+                        continue
                     Process.objects.create(
                         client=client,
                         pid=proc_data['pid'],
                         name=proc_data['name'],
                         path=proc_data.get('path', ''),
-                        command_line=proc_data.get('commandLine', '')
+                        command_line=proc_data.get('commandLine', ''),
+                        parent_pid=proc_data.get('parent_pid'),
+                        parent_name=proc_data.get('parentName', ''),
+                        sha256_hash=proc_data.get('sha256', ''),
+                        is_lolbin=proc_data.get('isLolbin', False),
+                        is_suspicious_chain=proc_data.get('isSuspiciousChain', False),
                     )
 
-        # Process the reported ports
-        if 'ports' in data:
-            Port.objects.filter(client=client).delete()  # Clear old ports
-            for port_data in data['ports']:
-                if not all(key in port_data for key in ['port', 'protocol', 'state']):
-                    continue
-                Port.objects.create(
-                    client=client,
-                    port_number=port_data['port'],
-                    protocol=port_data['protocol'],
-                    state=port_data['state'],
-                    process_name=port_data.get('processName', ''),
-                    process_id=port_data.get('pid', 0)
-                )
+            # Process network connections (new format) or ports (legacy)
+            network_data = data.get('network', data.get('ports', []))
+            if network_data:
+                Port.objects.filter(client=client).delete()
+                for conn in network_data:
+                    local_port = conn.get('localPort', conn.get('port', 0))
+                    if not conn.get('protocol'):
+                        continue
+                    Port.objects.create(
+                        client=client,
+                        port_number=local_port,
+                        protocol=conn['protocol'],
+                        state=conn.get('state', ''),
+                        process_name=conn.get('processName', ''),
+                        process_id=conn.get('pid', 0),
+                        local_ip=conn.get('localIp'),
+                        local_port=local_port,
+                        remote_ip=conn.get('remoteIp'),
+                        remote_port=conn.get('remotePort'),
+                    )
 
-        # Process the reported alerts
-        if 'alerts' in data:
-            for alert_data in data['alerts']:
-                if not all(key in alert_data for key in ['type', 'description']):
-                    continue
-                SuspiciousActivity.objects.create(
-                    client=client,
-                    type=alert_data['type'],
-                    description=alert_data['description'],
-                    process_name=alert_data.get('processName', ''),
-                    process_id=alert_data.get('pid', 0)
-                )
-
-        # Analyze vulnerabilities for the updated client data
-        analyze_vulnerabilities(client)
-        match_iocs(client)
+            # Analyze vulnerabilities and match IoCs within the same transaction
+            analyze_vulnerabilities(client)
+            match_iocs(client)
 
         return Response({'status': 'success'})
     except Exception as e:
@@ -703,18 +886,6 @@ class ClientViewSet(viewsets.ModelViewSet):
                         process_id=port_data['pid']
                     )
 
-            # Process the reported suspicious activities
-            if 'activities' in data:
-                for activity_data in data['activities']:
-                    SuspiciousActivity.objects.create(
-                        client=client,
-                        type=activity_data['type'],
-                        description=activity_data['description'],
-                        process_name=activity_data.get('processName', ''),
-                        process_id=activity_data.get('pid'),
-                        timestamp=timezone.now()
-                    )
-
             # Analyze vulnerabilities
             analyze_vulnerabilities(client)
 
@@ -876,3 +1047,136 @@ def client_command(request, client_id):
         return JsonResponse({'success': True})
         
     return JsonResponse({'success': False, 'error': 'Invalid method'})
+
+
+@login_required
+def ioc_manager(request):
+    from django.db.models import Count, Max
+
+    ip_stats = ThreatIntelIP.objects.filter(
+        is_active=True
+    ).values('source').annotate(
+        count=Count('id'),
+        last_updated=Max('added_date')
+    ).order_by('-count')
+
+    hash_stats = ThreatIntelHash.objects.filter(
+        is_active=True
+    ).values('source').annotate(
+        count=Count('id'),
+        last_updated=Max('added_date')
+    ).order_by('-count')
+
+    ip_total = ThreatIntelIP.objects.filter(is_active=True).count()
+    hash_total = ThreatIntelHash.objects.filter(is_active=True).count()
+
+    recent_detections = SuspiciousActivity.objects.filter(
+        ioc_matched__isnull=False
+    ).exclude(
+        ioc_matched=''
+    ).select_related('client').order_by('-last_seen')[:20]
+
+    exclusion_rules = ExclusionRule.objects.select_related(
+        'added_by'
+    ).order_by('-created_at')
+
+    context = {
+        'ip_stats': ip_stats,
+        'hash_stats': hash_stats,
+        'ip_total': ip_total,
+        'hash_total': hash_total,
+        'total_ti': ip_total + hash_total,
+        'recent_detections': recent_detections,
+        'exclusion_rules': exclusion_rules,
+    }
+    return render(request, 'edr_app/ioc_manager.html', context)
+
+
+@login_required
+@require_POST
+def sync_ti_feeds_view(request):
+    from django.core.management import call_command
+    from io import StringIO
+    import re
+    try:
+        out = StringIO()
+        call_command('sync_ti_feeds', stdout=out)
+        output = out.getvalue()
+
+        ip_match = re.search(r'IPs: \+(\d+) total', output)
+        hash_match = re.search(r'Hashes: \+(\d+) total', output)
+        added_ips = int(ip_match.group(1)) if ip_match else 0
+        added_hashes = int(hash_match.group(1)) if hash_match else 0
+
+        new_total = (ThreatIntelIP.objects.filter(is_active=True).count() +
+                     ThreatIntelHash.objects.filter(is_active=True).count())
+
+        return JsonResponse({
+            'status': 'ok',
+            'added_ips': added_ips,
+            'added_hashes': added_hashes,
+            'total': new_total,
+            'output': output,
+        })
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=500)
+
+
+@login_required
+@require_POST
+def ioc_add(request):
+    import re
+
+    ioc_type = request.POST.get('type', 'ip')
+    raw_values = request.POST.get('values', '')
+    source = request.POST.get('source', 'manual').strip()
+    threat_type = request.POST.get('threat_type', '').strip()
+
+    lines = [l.strip() for l in raw_values.splitlines() if l.strip()]
+
+    added = skipped = invalid = 0
+
+    if ioc_type == 'ip':
+        ip_pattern = re.compile(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$')
+        valid = [l for l in lines if ip_pattern.match(l)]
+        invalid = len(lines) - len(valid)
+
+        objs = [ThreatIntelIP(
+            ip_address=ip,
+            source=source or 'manual',
+            threat_type=threat_type or 'custom',
+        ) for ip in valid]
+        result = ThreatIntelIP.objects.bulk_create(objs, ignore_conflicts=True)
+        added = len(result)
+        skipped = len(valid) - added
+    else:
+        hash_pattern = re.compile(r'^[a-fA-F0-9]{64}$')
+        valid = [l.lower() for l in lines if hash_pattern.match(l)]
+        invalid = len(lines) - len(valid)
+
+        objs = [ThreatIntelHash(
+            sha256_hash=h,
+            source=source or 'manual',
+            malware_name=threat_type or 'custom',
+        ) for h in valid]
+        result = ThreatIntelHash.objects.bulk_create(objs, ignore_conflicts=True)
+        added = len(result)
+        skipped = len(valid) - added
+
+    return JsonResponse({
+        'status': 'ok',
+        'added': added,
+        'skipped': skipped,
+        'invalid': invalid,
+    })
+
+
+@login_required
+@require_POST
+def exclusion_delete(request, rule_id):
+    rule = get_object_or_404(ExclusionRule, id=rule_id)
+    rule.delete()
+    return JsonResponse({'status': 'ok'})

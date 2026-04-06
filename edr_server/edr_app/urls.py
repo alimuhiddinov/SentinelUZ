@@ -11,6 +11,7 @@ urlpatterns = [
     path('dashboard/', views.dashboard, name='dashboard'),
     path('device/<int:device_id>/', views.device_detail, name='device_detail'),
     path('processes/', views.processes, name='processes'),
+    path('processes/tree/<int:device_id>/', views.process_tree, name='process_tree'),
     path('ports/', views.ports, name='ports'),
     path('alerts/', views.alerts, name='alerts'),
     path('vulnerabilities/', views.vulnerabilities, name='vulnerabilities'),
@@ -25,7 +26,18 @@ urlpatterns = [
     path('api/clients/<int:client_id>/kill_process/<int:process_id>/', views.kill_process, name='kill_process'),
     path('api/clients/<int:client_id>/command/', views.client_command, name='client_command'),
     path('api/commands/pending/', views.pending_commands, name='pending_commands'),
+    path('alerts/<int:alert_id>/', views.alert_detail, name='alert_detail'),
+    path('api/alerts/<int:alert_id>/context/', views.alert_process_context, name='alert_process_context'),
+    path('api/alerts/<int:alert_id>/events/', views.alert_events_api, name='alert_events_api'),
+    path('api/alerts/<int:alert_id>/network/', views.alert_network_context, name='alert_network_context'),
+    path('api/alerts/<int:alert_id>/acknowledge/', views.alert_acknowledge, name='alert_acknowledge'),
     path('api/health/', views.health_check, name='health_check'),
+
+    # IoC Manager
+    path('ioc-manager/', views.ioc_manager, name='ioc_manager'),
+    path('api/sync-ti/', views.sync_ti_feeds_view, name='sync_ti_feeds_view'),
+    path('api/ioc/add/', views.ioc_add, name='ioc_add'),
+    path('api/exclusions/<int:rule_id>/delete/', views.exclusion_delete, name='exclusion_delete'),
 ]
 
 urlpatterns += router.urls
