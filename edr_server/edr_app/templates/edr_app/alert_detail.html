@@ -1,0 +1,629 @@
+{% extends 'edr_app/base.html' %}
+
+{% block title %}{{ alert.type }} — {{ alert.client.hostname }} — SentinelUZ{% endblock %}
+
+{% block extra_css %}
+    .alert-detail-header {
+        background: var(--bg-surface);
+        border: 1px solid var(--border-subtle);
+        border-radius: 6px;
+        padding: 20px 24px;
+        margin-bottom: 20px;
+    }
+    .header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .header-main { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+    .alert-title { font-size: var(--text-lg); font-weight: 500; margin: 0; }
+    .alert-device { font-size: var(--text-sm); color: var(--text-secondary); }
+    .header-meta { display: flex; gap: 20px; font-size: var(--text-xs); color: var(--text-muted); flex-wrap: wrap; }
+    .count-badge { background: var(--bg-elevated); padding: 2px 8px; border-radius: 3px; color: var(--text-secondary); font-weight: 600; }
+    .btn-acknowledge { background: var(--bg-elevated); border: 1px solid var(--border-default); border-radius: 4px; padding: 6px 14px; font-family: var(--font-ui); font-size: var(--text-sm); color: var(--text-secondary); cursor: pointer; }
+    .btn-acknowledge:hover { border-color: var(--accent); color: var(--accent); }
+    .acknowledged-badge { font-size: var(--text-xs); color: var(--status-online); }
+
+    .tab-nav { display: flex; gap: 2px; border-bottom: 1px solid var(--border-subtle); margin-bottom: 20px; }
+    .tab-btn { display: flex; align-items: center; gap: 6px; background: transparent; border: none; border-bottom: 2px solid transparent; padding: 10px 16px; font-family: var(--font-ui); font-size: var(--text-sm); color: var(--text-secondary); cursor: pointer; margin-bottom: -1px; }
+    .tab-btn:hover { color: var(--text-primary); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-count { background: var(--bg-elevated); font-family: var(--font-mono); font-size: 10px; padding: 1px 5px; border-radius: 8px; color: var(--text-muted); }
+    .tab-indicator { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); display: inline-block; }
+
+    .info-card { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 16px 20px; margin-bottom: 12px; }
+    .card-title { font-size: var(--text-sm); font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+    .card-body-text { font-size: var(--text-sm); color: var(--text-primary); margin: 0 0 10px; }
+    .alert-explanation { font-size: var(--text-sm); color: var(--text-secondary); background: var(--bg-elevated); border-radius: 4px; padding: 10px 12px; margin-top: 8px; border-left: 3px solid var(--border-bright); }
+    .action-card { border-left: 3px solid var(--border-bright); }
+    .action-critical { border-left-color: var(--critical); }
+    .action-high { border-left-color: var(--high); }
+    .action-steps { margin: 0; padding-left: 20px; font-size: var(--text-sm); line-height: 2; }
+
+    .timeline { display: flex; flex-direction: column; }
+    .timeline-item { display: flex; align-items: flex-start; gap: 12px; position: relative; }
+    .timeline-item:not(:last-child)::before { content: ''; position: absolute; left: 7px; top: 16px; width: 1px; height: calc(100% + 4px); background: var(--border-default); }
+    .timeline-dot { width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0; margin-top: 2px; }
+    .timeline-dot.first { background: var(--critical); }
+    .timeline-dot.mid { background: var(--border-bright); }
+    .timeline-dot.last { background: var(--status-online); }
+    .timeline-content { display: flex; flex-direction: column; padding-bottom: 12px; }
+    .timeline-label { font-size: var(--text-sm); }
+    .timeline-time { font-size: 11px; color: var(--text-muted); }
+
+    .related-alert-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border-subtle); text-decoration: none; font-size: var(--text-sm); }
+    .related-alert-row:hover { background: var(--bg-elevated); }
+    .related-type { color: var(--text-primary); flex: 1; }
+    .related-time { color: var(--text-muted); font-size: 11px; }
+    .card-note { font-size: 11px; color: var(--text-muted); margin: 8px 0 0; }
+    .current-alert { background: var(--bg-selected); border-left: 2px solid var(--accent); padding-left: 8px; }
+
+    .chain-controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: var(--text-sm); color: var(--text-secondary); }
+    .chain-card { padding: 12px; min-height: 120px; }
+    .context-loading { font-size: var(--text-xs); color: var(--text-muted); padding: 8px 0; }
+
+    /* GIB-style context tree (reused from alerts.html) */
+    .context-ioc { font-size: var(--text-xs); color: var(--text-secondary); margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border-subtle); }
+    .context-tree { display: flex; flex-direction: column; gap: 1px; }
+    .ctx-row { display: flex; align-items: center; min-height: 28px; border-radius: 3px; overflow: hidden; }
+    .ctx-bar { width: 3px; min-height: 28px; flex-shrink: 0; background: transparent; margin-right: 8px; }
+    .ctx-bar.bar-critical { background: var(--critical); }
+    .ctx-bar.bar-lolbin { background: var(--lolbin); }
+    .ctx-row.ctx-flagged { background: var(--critical-bg); }
+    .ctx-row.ctx-suspicious { background: var(--critical-bg); }
+    .ctx-row.ctx-lolbin { background: var(--lolbin-bg); }
+    .ctx-row:hover { background: var(--bg-elevated); }
+    .ctx-row.ctx-flagged:hover { background: #3a1a1a; }
+    .ctx-content { display: flex; align-items: center; justify-content: space-between; flex: 1; padding: 4px 8px; gap: 8px; overflow: hidden; }
+    .ctx-main { display: flex; align-items: center; gap: 6px; overflow: hidden; flex: 1; }
+    .ctx-connector { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--border-bright); flex-shrink: 0; }
+    .ctx-pid { font-family: var(--font-mono); font-size: 11px; color: #f59e0b; flex-shrink: 0; min-width: 42px; }
+    .ctx-name { font-family: var(--font-ui); font-size: var(--text-sm); font-weight: 500; white-space: nowrap; }
+    .ctx-name.suspicious { color: var(--critical); }
+    .ctx-name.lolbin { color: var(--lolbin); }
+    .ctx-cmd { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 400px; }
+    .ctx-alert-badge { font-size: 14px; flex-shrink: 0; color: var(--critical); }
+
+    /* Events timeline */
+    .events-timeline { display: flex; flex-direction: column; }
+    .evt-row { display: flex; gap: 12px; padding: 8px 0; }
+    .evt-indicator { display: flex; flex-direction: column; align-items: center; width: 24px; flex-shrink: 0; }
+    .evt-icon { font-size: 14px; width: 24px; text-align: center; z-index: 1; }
+    .evt-line { width: 1px; flex: 1; background: var(--border-default); margin-top: 4px; min-height: 16px; }
+    .evt-body { flex: 1; padding-bottom: 4px; }
+    .evt-header { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+    .evt-type { font-size: var(--text-sm); font-weight: 500; }
+    .evt-time { font-size: 11px; color: var(--text-muted); margin-left: auto; }
+    .evt-pid, .evt-state { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); margin-left: 6px; }
+    .evt-path, .evt-chain { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 500px; }
+
+    /* Network table */
+    .row-critical { background: var(--critical-bg); }
+    .state-badge { font-family: var(--font-mono); font-size: 10px; padding: 1px 6px; border-radius: 3px; text-transform: uppercase; }
+    .state-established { background: #064e3b; color: #6ee7b7; }
+    .state-listen, .state-listening { background: #0f1c35; color: #93c5fd; }
+    .state-time_wait { background: #2d2600; color: #fbbf24; }
+
+    /* Asset */
+    .asset-grid { display: flex; flex-direction: column; gap: 10px; }
+    .asset-row { display: flex; align-items: center; gap: 16px; font-size: var(--text-sm); }
+    .asset-label { color: var(--text-muted); min-width: 100px; flex-shrink: 0; }
+    .asset-value { color: var(--text-primary); }
+
+    /* ── Detail Layout (left + right panel) ── */
+    .detail-layout { display: grid; grid-template-columns: 1fr 400px; gap: 16px; align-items: start; }
+    .right-panel { background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: 8px; position: sticky; top: 72px; max-height: calc(100vh - 96px); overflow-y: auto; }
+    .right-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border-subtle); position: sticky; top: 0; background: var(--bg-surface); z-index: 1; }
+    .back-btn { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: var(--text-sm); cursor: pointer; background: none; border: none; padding: 4px 0; font-family: var(--font-ui); }
+    .back-btn:hover { color: var(--text-primary); }
+    .tactic-group { padding: 12px 16px 0; }
+    .tactic-label { font-size: var(--text-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 6px; }
+    .sig-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-radius: 6px; cursor: pointer; margin-bottom: 4px; border: 1px solid transparent; transition: all 0.15s; }
+    .sig-row:hover { background: var(--bg-elevated); border-color: var(--border-default); }
+    .sig-title { font-size: var(--text-sm); color: var(--text-primary); }
+    .sig-meta { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+    .mitre-badge { font-family: var(--font-mono); font-size: 10px; padding: 1px 5px; border-radius: 3px; background: var(--bg-elevated); color: var(--text-muted); border: 1px solid var(--border-subtle); }
+    .rp-event-row { padding: 10px 16px; border-bottom: 1px solid var(--border-subtle); cursor: pointer; transition: background 0.15s; }
+    .rp-event-row:hover { background: var(--bg-elevated); }
+    .rp-event-summary { font-size: var(--text-sm); color: var(--text-primary); }
+    .rp-event-time { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-muted); margin-top: 2px; }
+    .json-viewer { padding: 16px; font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.6; white-space: pre-wrap; word-break: break-all; color: var(--text-secondary); }
+    .json-key { color: var(--accent); }
+    .json-string { color: #86efac; }
+    .json-number { color: #fbbf24; }
+    .json-bool { color: var(--high); }
+    .copy-json-btn { margin: 0 16px 16px; padding: 8px 16px; background: var(--bg-elevated); border: 1px solid var(--border-default); border-radius: 6px; color: var(--text-secondary); font-size: var(--text-sm); cursor: pointer; width: calc(100% - 32px); font-family: var(--font-ui); }
+    .copy-json-btn:hover { border-color: var(--accent); color: var(--text-primary); }
+    .technical-toggle { display: flex; align-items: center; gap: 6px; font-size: var(--text-xs); color: var(--text-muted); cursor: pointer; user-select: none; }
+    .mitre-ids-row { display: none; padding: 8px 16px; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-muted); border-top: 1px solid var(--border-subtle); flex-wrap: wrap; gap: 6px; }
+    .mitre-ids-row.visible { display: flex; }
+    .sig-detail-block { padding: 12px 16px; border-bottom: 1px solid var(--border-subtle); }
+    .sig-detail-block h4 { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
+    .sig-detail-block p { font-size: var(--text-xs); color: var(--text-muted); line-height: 1.5; margin: 0 0 8px; }
+    .sig-detail-block .action-label { font-size: var(--text-xs); font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; }
+    .sig-detail-block .action-text { font-size: var(--text-xs); color: var(--text-muted); white-space: pre-line; line-height: 1.6; }
+
+    @media (max-width: 900px) { .detail-layout { grid-template-columns: 1fr; } .right-panel { position: static; max-height: none; } }
+{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="alert-detail-header" style="border-left: 4px solid {% if alert.severity == 'CRITICAL' %}var(--critical){% elif alert.severity == 'HIGH' %}var(--high){% elif alert.severity == 'MEDIUM' %}var(--medium){% else %}var(--low){% endif %}">
+    <div class="header-top">
+        <a href="{% url 'alerts' %}" class="back-link">&larr; All Alerts</a>
+        <div>
+            {% if not alert.is_acknowledged %}
+            <button class="btn-acknowledge" onclick="acknowledgeAlert({{ alert.id }})">Acknowledge</button>
+            {% else %}
+            <span class="acknowledged-badge">&#10003; Acknowledged</span>
+            {% endif %}
+        </div>
+    </div>
+    <div class="header-main">
+        <span class="badge badge-{{ alert.severity|lower }}">{{ alert.severity }}</span>
+        <h1 class="alert-title">{{ alert.type }}</h1>
+        <span class="alert-device mono">{{ alert.client.hostname }}</span>
+    </div>
+    <div class="header-meta">
+        <span>First seen: <span class="mono">{{ alert.timestamp|date:"Y-m-d H:i:s" }}</span></span>
+        <span>Last seen: <span data-iso="{{ alert.last_seen|date:'c' }}">{{ alert.last_seen|date:"Y-m-d H:i:s" }}</span></span>
+        {% if alert.event_count > 1 %}<span class="count-badge">{{ alert.event_count }}&times;</span>{% endif %}
+        {% if alert.ioc_matched %}<span>IOC: <span class="mono">{{ alert.ioc_matched }}</span></span>{% endif %}
+    </div>
+</div>
+
+<!-- Tabs -->
+<div class="tab-nav">
+    <button class="tab-btn active" onclick="switchTab('overview', this)" id="tab-overview">Overview</button>
+    <button class="tab-btn" onclick="switchTab('chain', this)" id="tab-chain">Process Chain {% if alert.process_id %}<span class="tab-indicator"></span>{% endif %}</button>
+    <button class="tab-btn" onclick="switchTab('events', this)" id="tab-events">Events <span class="tab-count">{{ event_count }}</span></button>
+    <button class="tab-btn" onclick="switchTab('network', this)" id="tab-network">Network</button>
+    <button class="tab-btn" onclick="switchTab('asset', this)" id="tab-asset">Asset</button>
+</div>
+
+<div class="detail-layout">
+<div class="detail-left">
+<!-- Tab 1: Overview -->
+<div class="tab-panel" id="panel-overview">
+    <div class="info-card">
+        <h3 class="card-title">What happened</h3>
+        <p class="card-body-text">{{ alert.description }}</p>
+        <div class="alert-explanation">
+            {% if alert.type == 'HASH_MATCH' %}
+            A running process matched a known malware hash in the threat intelligence database. This process has been positively identified as malicious.
+            {% elif alert.type == 'MALICIOUS_IP' %}
+            A network connection was made to an IP address known to be used by malware command-and-control infrastructure.
+            {% elif alert.type == 'SUSPICIOUS_CHAIN' %}
+            A Windows administration tool was spawned by an unusual parent process. This pattern is commonly used in macro-based attacks such as the Bloody Wolf campaign.
+            {% elif alert.type == 'RANSOMWARE_PRECURSOR' %}
+            A tool commonly used by ransomware operators before encrypting files was detected. This may indicate an active ransomware attack in preparation.
+            {% elif alert.type == 'KNOWN_ATTACK_TOOL' %}
+            A process matching a known attack tool (e.g. mimikatz, psexec) was detected running on this endpoint.
+            {% elif alert.type == 'LOLBIN_DETECTED' %}
+            A Windows administration tool (Living-off-the-Land Binary) was detected. Usually normal, but review if unexpected.
+            {% else %}
+            A suspicious indicator was detected that matches known threat intelligence data.
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="info-card {% if alert.severity == 'CRITICAL' %}action-critical{% elif alert.severity == 'HIGH' %}action-high{% else %}action-card{% endif %}">
+        <h3 class="card-title">Recommended action</h3>
+        {% if alert.severity == 'CRITICAL' %}
+        <ol class="action-steps">
+            <li>Disconnect this endpoint from the network immediately</li>
+            <li>Do NOT restart the computer &mdash; this destroys evidence</li>
+            <li>Contact CERT-UZ: cert.uz</li>
+            <li>Check the Process Chain tab for the full attack chain</li>
+            <li>Check Network tab for other affected connections</li>
+        </ol>
+        {% elif alert.severity == 'HIGH' %}
+        <ol class="action-steps">
+            <li>Investigate within the next hour</li>
+            <li>Check the Process Chain tab &mdash; was this expected?</li>
+            <li>Check Network tab for suspicious outbound connections</li>
+            <li>If confirmed: disconnect endpoint and contact CERT-UZ</li>
+            <li>If false positive: add exclusion rule in IoC Manager</li>
+        </ol>
+        {% else %}
+        <ol class="action-steps">
+            <li>Review the Process Chain tab</li>
+            <li>Confirm whether this activity was expected</li>
+            <li>If unexpected: escalate to HIGH investigation</li>
+            <li>If expected: add exclusion rule in IoC Manager</li>
+        </ol>
+        {% endif %}
+    </div>
+
+    <div class="info-card">
+        <h3 class="card-title">Timeline</h3>
+        <div class="timeline">
+            <div class="timeline-item">
+                <div class="timeline-dot first"></div>
+                <div class="timeline-content">
+                    <span class="timeline-label">First detected</span>
+                    <span class="timeline-time mono">{{ alert.timestamp|date:"Y-m-d H:i:s" }}</span>
+                </div>
+            </div>
+            {% if alert.event_count > 1 %}
+            <div class="timeline-item">
+                <div class="timeline-dot mid"></div>
+                <div class="timeline-content">
+                    <span class="timeline-label">{{ alert.event_count }} occurrences recorded</span>
+                </div>
+            </div>
+            {% endif %}
+            <div class="timeline-item">
+                <div class="timeline-dot last"></div>
+                <div class="timeline-content">
+                    <span class="timeline-label">Last seen</span>
+                    <span class="timeline-time mono">{{ alert.last_seen|date:"Y-m-d H:i:s" }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if related_alerts %}
+    <div class="info-card">
+        <h3 class="card-title">Related alerts <span class="tab-count">{{ related_alerts|length }}</span></h3>
+        {% for rel in related_alerts %}
+        <a href="{% url 'alert_detail' rel.id %}" class="related-alert-row">
+            <span class="badge badge-{{ rel.severity|lower }}">{{ rel.severity }}</span>
+            <span class="related-type">{{ rel.type }}</span>
+            <span class="related-time mono">{{ rel.timestamp|date:"H:i:s" }}</span>
+        </a>
+        {% endfor %}
+        <p class="card-note">These alerts share the same process tree and time window.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Tab 2: Process Chain -->
+<div class="tab-panel" id="panel-chain" style="display:none">
+    <div class="chain-controls">
+        <span>Process chain for this alert</span>
+        <a href="{% url 'process_tree' alert.client.id %}" class="btn btn-sm" target="_blank">Open full tree</a>
+    </div>
+    <div id="chain-container" class="info-card chain-card">
+        <div class="context-loading">Click the Process Chain tab to load...</div>
+    </div>
+</div>
+
+<!-- Tab 3: Events -->
+<div class="tab-panel" id="panel-events" style="display:none">
+    <div id="events-container">
+        <div class="context-loading">Loading events...</div>
+    </div>
+</div>
+
+<!-- Tab 4: Network -->
+<div class="tab-panel" id="panel-network" style="display:none">
+    <div id="network-container">
+        <div class="context-loading">Loading connections...</div>
+    </div>
+</div>
+
+<!-- Tab 5: Asset -->
+<div class="tab-panel" id="panel-asset" style="display:none">
+    <div class="info-card">
+        <h3 class="card-title">Affected endpoint</h3>
+        <div class="asset-grid">
+            <div class="asset-row"><span class="asset-label">Hostname</span><span class="asset-value mono">{{ alert.client.hostname }}</span></div>
+            <div class="asset-row"><span class="asset-label">IP Address</span><span class="asset-value mono">{{ alert.client.ip_address }}</span></div>
+            <div class="asset-row"><span class="asset-label">Last seen</span><span class="asset-value" data-iso="{{ alert.client.last_seen|date:'c' }}">{{ alert.client.last_seen|date:"Y-m-d H:i:s" }}</span></div>
+            <div class="asset-row"><span class="asset-label">Status</span><span class="asset-value"><span class="status-dot {% if alert.client.is_active %}online{% else %}offline{% endif %}"></span> {% if alert.client.is_active %}Online{% else %}Offline{% endif %}</span></div>
+        </div>
+    </div>
+    <div class="info-card">
+        <h3 class="card-title">Alert history on this device</h3>
+        {% for da in alert.client.activities.all|slice:":10" %}
+        <a href="{% url 'alert_detail' da.id %}" class="related-alert-row {% if da.id == alert.id %}current-alert{% endif %}">
+            <span class="badge badge-{{ da.severity|lower }}">{{ da.severity }}</span>
+            <span class="related-type">{{ da.type }}</span>
+            <span class="related-time mono">{{ da.last_seen|date:"m-d H:i" }}</span>
+        </a>
+        {% endfor %}
+        <a href="{% url 'device_detail' alert.client.id %}" class="btn btn-sm" style="margin-top:10px">View full device detail</a>
+    </div>
+</div>
+</div><!-- end detail-left -->
+
+<!-- Right Panel: Signatures Drill-Down -->
+<div class="right-panel" id="rightPanel">
+    <!-- State 1: Signatures list -->
+    <div id="signaturesState">
+        <div class="right-panel-header">
+            <div>
+                <div style="font-size:var(--text-sm);font-weight:600;">Detections</div>
+                <div style="font-size:var(--text-xs);color:var(--text-muted);" id="sigSummary">Loading...</div>
+            </div>
+            <label class="technical-toggle">
+                <input type="checkbox" id="technicalToggle" style="margin:0;accent-color:var(--accent)">
+                Technical
+            </label>
+        </div>
+        <div id="mitreBadgesRow" class="mitre-ids-row"></div>
+        <div id="tacticsContainer"></div>
+    </div>
+
+    <!-- State 2: Events for a signature -->
+    <div id="eventsState" style="display:none;">
+        <div class="right-panel-header">
+            <button class="back-btn" id="backToSigs">&larr; Detections</button>
+        </div>
+        <div id="sigDetail" class="sig-detail-block"></div>
+        <div id="rpEventsContainer"></div>
+    </div>
+
+    <!-- State 3: Raw JSON -->
+    <div id="jsonState" style="display:none;">
+        <div class="right-panel-header">
+            <button class="back-btn" id="backToEvents">&larr; Events</button>
+            <div id="jsonEventType" style="font-size:var(--text-xs);color:var(--text-muted);"></div>
+        </div>
+        <div class="json-viewer" id="jsonViewer"></div>
+        <button class="copy-json-btn" id="copyJsonBtn">Copy JSON</button>
+    </div>
+</div>
+
+</div><!-- end detail-layout -->
+{% endblock %}
+
+{% block extra_js %}
+<script>
+var ALERT_ID = {{ alert.id }};
+var chainLoaded = false, eventsLoaded = false, networkLoaded = false;
+
+function switchTab(tab, btn) {
+    document.querySelectorAll('.tab-panel').forEach(function(p) { p.style.display = 'none'; });
+    document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+    document.getElementById('panel-' + tab).style.display = 'block';
+    btn.classList.add('active');
+    history.replaceState(null, '', '#' + tab);
+    if (tab === 'chain' && !chainLoaded) { loadChain(); chainLoaded = true; }
+    if (tab === 'events' && !eventsLoaded) { loadEvents(); eventsLoaded = true; }
+    if (tab === 'network' && !networkLoaded) { loadNetwork(); networkLoaded = true; }
+}
+
+function loadChain() {
+    var c = document.getElementById('chain-container');
+    c.innerHTML = '<div class="context-loading">Loading chain...</div>';
+    var ctrl = new AbortController();
+    setTimeout(function() { ctrl.abort(); }, 5000);
+    fetch('/api/alerts/' + ALERT_ID + '/context/', { credentials: 'same-origin', signal: ctrl.signal })
+        .then(function(r) { return r.json(); })
+        .then(function(data) { c.innerHTML = renderContextTree(data); })
+        .catch(function() { c.innerHTML = '<div class="context-loading">Failed to load chain.</div>'; });
+}
+
+function loadEvents() {
+    var c = document.getElementById('events-container');
+    c.innerHTML = '<div class="context-loading">Loading events...</div>';
+    var ctrl = new AbortController();
+    setTimeout(function() { ctrl.abort(); }, 5000);
+    fetch('/api/alerts/' + ALERT_ID + '/events/', { credentials: 'same-origin', signal: ctrl.signal })
+        .then(function(r) { return r.json(); })
+        .then(function(data) { c.innerHTML = renderEventsTimeline(data.events); })
+        .catch(function() { c.innerHTML = '<div class="context-loading">No events linked to this alert yet.</div>'; });
+}
+
+function loadNetwork() {
+    var c = document.getElementById('network-container');
+    c.innerHTML = '<div class="context-loading">Loading connections...</div>';
+    var ctrl = new AbortController();
+    setTimeout(function() { ctrl.abort(); }, 5000);
+    fetch('/api/alerts/' + ALERT_ID + '/network/', { credentials: 'same-origin', signal: ctrl.signal })
+        .then(function(r) { return r.json(); })
+        .then(function(data) { c.innerHTML = renderNetworkTable(data.connections); })
+        .catch(function() { c.innerHTML = '<div class="context-loading">No network connections found.</div>'; });
+}
+
+function acknowledgeAlert(alertId) {
+    fetch('/api/alerts/' + alertId + '/acknowledge/', {
+        method: 'POST',
+        headers: {'X-CSRFToken': getCSRF()}
+    }).then(function(r) {
+        if (r.ok) {
+            document.querySelector('.btn-acknowledge').outerHTML = '<span class="acknowledged-badge">&#10003; Acknowledged</span>';
+            showToast('Alert acknowledged');
+        }
+    }).catch(function() { showToast('Failed to acknowledge'); });
+}
+
+/* ── GIB-style context tree renderer ── */
+function renderContextTree(data) {
+    if (!data.processes || data.processes.length === 0)
+        return '<div class="context-loading">No process data available.</div>';
+    var map = {}, roots = [];
+    data.processes.forEach(function(p) { map[p.pid] = {pid:p.pid, parent_pid:p.parent_pid, name:p.name, flagged:p.flagged, lolbin:p.lolbin, suspicious:p.suspicious, hash_short:p.hash_short, hash_full:p.hash_full, path:p.path, cmd:p.cmd, children:[]}; });
+    data.processes.forEach(function(p) { if (p.parent_pid && map[p.parent_pid]) map[p.parent_pid].children.push(map[p.pid]); else roots.push(map[p.pid]); });
+    var html = '';
+    if (data.ioc) html += '<div class="context-ioc">IOC: <span class="mono">' + esc(data.ioc) + '</span></div>';
+    html += '<div class="context-tree">' + renderCtxNodes(roots, 0, data.flagged_pid) + '</div>';
+    return html;
+}
+
+function renderCtxNodes(nodes, depth, fp) {
+    var html = '';
+    nodes.forEach(function(n, i) {
+        var isLast = i === nodes.length - 1, isFlagged = n.pid === fp, indent = depth * 20;
+        var rc = 'ctx-row' + (isFlagged ? ' ctx-flagged' : n.suspicious ? ' ctx-suspicious' : n.lolbin ? ' ctx-lolbin' : '');
+        var bc = 'ctx-bar' + ((n.suspicious || isFlagged) ? ' bar-critical' : n.lolbin ? ' bar-lolbin' : '');
+        var conn = depth === 0 ? '' : '<span class="ctx-connector">' + (isLast ? '\u2514' : '\u251C') + '</span>';
+        var nc = (n.suspicious || isFlagged) ? 'ctx-name suspicious' : n.lolbin ? 'ctx-name lolbin' : 'ctx-name';
+        var hashH = (isFlagged && n.hash_short) ? '<span class="hash" onclick="copyHash(\'' + n.hash_full + '\')" title="' + n.hash_full + '">' + n.hash_short + '...</span>' : '';
+        var cmdH = n.cmd ? '<span class="ctx-cmd">' + esc(n.cmd) + '</span>' : '';
+        html += '<div class="' + rc + '" style="padding-left:' + indent + 'px"><div class="' + bc + '"></div><div class="ctx-content"><div class="ctx-main">' + conn + '<span class="ctx-pid">' + n.pid + '</span><span class="' + nc + '">' + esc(n.name) + '</span>' + cmdH + hashH + '</div>' + (isFlagged ? '<span class="ctx-alert-badge">\u26A0</span>' : '') + '</div></div>';
+        if (n.children && n.children.length) html += renderCtxNodes(n.children, depth + 1, fp);
+    });
+    return html;
+}
+
+/* ── Events timeline renderer ── */
+function renderEventsTimeline(events) {
+    if (!events || events.length === 0) return '<div class="context-loading">No events linked to this alert yet.</div>';
+    var icons = {PROCESS_START:'\u25B6', NETWORK_CONNECT:'\u27F6', HASH_MATCH:'\u26A0', IP_MATCH:'\u2298', LOLBIN_CHAIN:'\u26D3', RANSOMWARE_PRECURSOR:'\uD83D\uDD12'};
+    var colors = {PROCESS_START:'var(--text-secondary)', NETWORK_CONNECT:'var(--accent)', HASH_MATCH:'var(--critical)', IP_MATCH:'var(--critical)', LOLBIN_CHAIN:'var(--lolbin)', RANSOMWARE_PRECURSOR:'var(--critical)'};
+    var html = '<div class="events-timeline">';
+    events.forEach(function(e, i) {
+        var icon = icons[e.event_type] || '\u25CF';
+        var color = colors[e.event_type] || 'var(--text-muted)';
+        var time = new Date(e.timestamp).toLocaleTimeString();
+        var detail = '';
+        if (e.process) { detail = '<span class="mono">' + esc(e.process.name) + '</span><span class="evt-pid">PID: ' + e.process.pid + '</span>'; if (e.process.path) detail += '<div class="evt-path mono">' + esc(e.process.path) + '</div>'; }
+        if (e.port) { detail = '<span class="mono">' + esc(e.port.remote_ip + ':' + e.port.remote_port) + '</span><span class="evt-state">' + (e.port.state || '') + '</span>'; }
+        if (e.raw_data && e.raw_data.chain) detail += '<div class="evt-chain">' + esc(e.raw_data.chain) + '</div>';
+        html += '<div class="evt-row"><div class="evt-indicator"><span class="evt-icon" style="color:' + color + '">' + icon + '</span>' + (i < events.length - 1 ? '<div class="evt-line"></div>' : '') + '</div><div class="evt-body"><div class="evt-header"><span class="evt-type" style="color:' + color + '">' + esc(e.display_name) + '</span><span class="evt-time mono">' + time + '</span></div><div class="evt-detail">' + detail + '</div></div></div>';
+    });
+    return html + '</div>';
+}
+
+/* ── Network table renderer ── */
+function renderNetworkTable(conns) {
+    if (!conns || conns.length === 0) return '<div class="context-loading">No network connections found.</div>';
+    var html = '<div class="table-wrap"><table><thead><tr><th>Process</th><th>Remote IP</th><th>Port</th><th>State</th><th>Status</th><th>Time</th></tr></thead><tbody>';
+    conns.forEach(function(c) {
+        var bl = c.is_blacklisted;
+        var ipStyle = bl ? 'color:var(--critical);font-weight:600' : '';
+        var status = bl ? '<span class="badge badge-critical">BLACKLISTED</span>' : '<span style="color:var(--text-muted)">Clean</span>';
+        var st = (c.state || '').toLowerCase();
+        html += '<tr class="' + (bl ? 'row-critical' : '') + '"><td class="mono">' + esc(c.process_name || '-') + '</td><td class="mono" style="' + ipStyle + '">' + esc(c.remote_ip || '-') + '</td><td class="mono">' + (c.remote_port || '-') + '</td><td><span class="state-badge state-' + st + '">' + esc(c.state || '-') + '</span></td><td>' + status + '</td><td class="mono">' + new Date(c.timestamp).toLocaleTimeString() + '</td></tr>';
+    });
+    return html + '</tbody></table></div>';
+}
+
+function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+// Deep link on load
+var hash = window.location.hash.replace('#', '');
+if (hash && document.getElementById('tab-' + hash)) {
+    switchTab(hash, document.getElementById('tab-' + hash));
+}
+
+/* ══ RIGHT PANEL: Signatures → Events → JSON ══ */
+function noSigsMsg() {
+    return '<div style="padding:20px 16px;color:var(--text-muted);font-size:var(--text-sm);text-align:center;line-height:1.6;">No detection signatures yet.<br><span style="font-size:var(--text-xs);">Signatures appear after the next agent scan detects suspicious activity on this alert.</span></div>';
+}
+
+function loadSignatures() {
+    var container = document.getElementById('tacticsContainer');
+    var ctrl = new AbortController();
+    setTimeout(function() { ctrl.abort(); }, 5000);
+    fetch('/api/alerts/' + ALERT_ID + '/signatures/', { credentials: 'same-origin', signal: ctrl.signal })
+        .then(function(r) {
+            if (!r.ok) { container.innerHTML = noSigsMsg(); return null; }
+            return r.json();
+        })
+        .then(function(data) {
+            if (!data) return;
+            if (!data.sig_count) {
+                container.innerHTML = noSigsMsg();
+                document.getElementById('sigSummary').textContent = 'No detections yet';
+                return;
+            }
+            renderSignatures(data);
+        })
+        .catch(function() {
+            container.innerHTML = noSigsMsg();
+            document.getElementById('sigSummary').textContent = 'No detections yet';
+        });
+}
+
+function renderSignatures(data) {
+    document.getElementById('sigSummary').textContent = data.sig_count + ' detection' + (data.sig_count !== 1 ? 's' : '') + ' \u00b7 ' + data.tactic_count + ' tactic' + (data.tactic_count !== 1 ? 's' : '');
+    var mitreIds = [];
+    var container = document.getElementById('tacticsContainer');
+    container.innerHTML = '';
+
+    data.tactics.forEach(function(tg) {
+        var group = document.createElement('div');
+        group.className = 'tactic-group';
+        var label = document.createElement('div');
+        label.className = 'tactic-label';
+        label.textContent = tg.tactic_display;
+        group.appendChild(label);
+
+        tg.signatures.forEach(function(sig) {
+            if (sig.mitre_id) mitreIds.push(sig.mitre_id);
+            var row = document.createElement('div');
+            row.className = 'sig-row';
+            row.innerHTML = '<div><div class="sig-title">' + esc(sig.plain_title) + '</div><div class="sig-meta"><span class="badge badge-' + sig.severity.toLowerCase() + '" style="font-size:10px;padding:1px 6px">' + sig.severity + '</span>' + (sig.mitre_id ? '<span class="mitre-badge">' + sig.mitre_id + '</span>' : '') + '<span style="font-size:var(--text-xs);color:var(--text-muted)">' + sig.event_count + ' event' + (sig.event_count !== 1 ? 's' : '') + '</span></div></div><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="color:var(--text-muted);flex-shrink:0"><path d="M9 18l6-6-6-6"/></svg>';
+            row.addEventListener('click', function() { showSigEvents(sig); });
+            group.appendChild(row);
+        });
+        container.appendChild(group);
+    });
+
+    var mitreBadgesRow = document.getElementById('mitreBadgesRow');
+    mitreBadgesRow.innerHTML = mitreIds.map(function(id) {
+        return '<a href="https://attack.mitre.org/techniques/' + id.replace('.', '/') + '/" target="_blank" class="mitre-badge" style="color:var(--accent);text-decoration:none">' + id + '</a>';
+    }).join('');
+}
+
+function showSigEvents(sig) {
+    document.getElementById('signaturesState').style.display = 'none';
+    document.getElementById('eventsState').style.display = 'block';
+    document.getElementById('sigDetail').innerHTML = '<h4>' + esc(sig.plain_title) + '</h4><p>' + esc(sig.plain_explanation) + '</p><div class="action-label">What to do:</div><div class="action-text">' + esc(sig.plain_action) + '</div>';
+
+    var container = document.getElementById('rpEventsContainer');
+    container.innerHTML = '<div style="padding:16px;color:var(--text-muted);font-size:var(--text-xs)">Loading events...</div>';
+
+    var ctrl = new AbortController();
+    setTimeout(function() { ctrl.abort(); }, 5000);
+    fetch('/api/signatures/' + sig.id + '/events/', { credentials: 'same-origin', signal: ctrl.signal })
+        .then(function(r) {
+            if (!r.ok) { container.innerHTML = '<div style="padding:16px;color:var(--text-muted);font-size:var(--text-sm)">No events linked yet.</div>'; return null; }
+            return r.json();
+        })
+        .then(function(data) {
+            if (!data) return;
+            container.innerHTML = '';
+            if (!data.events || !data.events.length) {
+                container.innerHTML = '<div style="padding:16px;color:var(--text-muted);font-size:var(--text-sm)">No raw events linked yet.</div>';
+                return;
+            }
+            var evtIcons = {PROCESS_START:'\u25B6', NETWORK_CONNECT:'\u27F6', HASH_MATCH:'\u26A0', IP_MATCH:'\u2298', LOLBIN_CHAIN:'\u26D3', RANSOMWARE_PRECURSOR:'\uD83D\uDD12'};
+            data.events.forEach(function(evt) {
+                var row = document.createElement('div');
+                row.className = 'rp-event-row';
+                row.innerHTML = '<div style="display:flex;align-items:flex-start;gap:10px"><span style="font-size:16px">' + (evtIcons[evt.event_type] || '\u25CF') + '</span><div><div class="rp-event-summary">' + esc(evt.summary) + '</div><div class="rp-event-time">' + (evt.timestamp ? new Date(evt.timestamp).toLocaleTimeString() : '') + '</div></div></div>';
+                row.addEventListener('click', function() { showJson(evt); });
+                container.appendChild(row);
+            });
+        })
+        .catch(function() {
+            container.innerHTML = '<div style="padding:16px;color:var(--text-muted);font-size:var(--text-sm)">No events linked yet.</div>';
+        });
+}
+
+function showJson(evt) {
+    document.getElementById('eventsState').style.display = 'none';
+    document.getElementById('jsonState').style.display = 'block';
+    document.getElementById('jsonEventType').textContent = evt.event_type_display;
+    document.getElementById('jsonViewer').innerHTML = syntaxHighlight(JSON.stringify(evt.raw_data, null, 2));
+    document.getElementById('copyJsonBtn').onclick = function() {
+        navigator.clipboard.writeText(JSON.stringify(evt.raw_data, null, 2));
+        showToast('Copied to clipboard');
+    };
+}
+
+function syntaxHighlight(json) {
+    return json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function(match) {
+        var cls = 'json-number';
+        if (/^"/.test(match)) cls = /:$/.test(match) ? 'json-key' : 'json-string';
+        else if (/true|false/.test(match)) cls = 'json-bool';
+        return '<span class="' + cls + '">' + match + '</span>';
+    });
+}
+
+document.getElementById('backToSigs').addEventListener('click', function() {
+    document.getElementById('eventsState').style.display = 'none';
+    document.getElementById('signaturesState').style.display = 'block';
+});
+document.getElementById('backToEvents').addEventListener('click', function() {
+    document.getElementById('jsonState').style.display = 'none';
+    document.getElementById('eventsState').style.display = 'block';
+});
+document.getElementById('technicalToggle').addEventListener('change', function(e) {
+    document.getElementById('mitreBadgesRow').classList.toggle('visible', e.target.checked);
+});
+
+loadSignatures();
+</script>
+{% endblock %}
