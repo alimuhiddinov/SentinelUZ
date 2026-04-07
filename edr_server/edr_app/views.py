@@ -1,3 +1,4 @@
+from functools import wraps
 from django.shortcuts import render, get_object_or_404, redirect
 from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view, permission_classes, authentication_classes
@@ -31,6 +32,18 @@ from django.http import HttpResponse, JsonResponse
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.contrib import messages
+
+def owner_required(view_func):
+    """Decorator: redirect non-owners to dashboard."""
+    @wraps(view_func)
+    def wrapper(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return redirect('login')
+        if not (request.user.is_staff or request.user.is_superuser):
+            return redirect('dashboard')
+        return view_func(request, *args, **kwargs)
+    return wrapper
+
 
 REPORTS_DIR = os.path.join(settings.BASE_DIR, 'reports_archive')
 os.makedirs(REPORTS_DIR, exist_ok=True)

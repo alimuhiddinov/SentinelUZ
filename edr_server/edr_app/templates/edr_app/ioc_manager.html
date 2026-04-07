@@ -235,10 +235,17 @@
         Sources: IPsum (208k+ IPs), Feodo Tracker, MalwareBazaar, ThreatFox.
         Targeted families: NetSupport RAT, LockBit, BlackCat/ALPHV, Rhysida, Ajina.Banker.
     </div>
+    {% if is_owner %}
     <button class="btn btn-primary btn-sync" id="btn-sync" onclick="syncFeeds()">
         <span class="spinner"></span>
         <span class="btn-text">Sync Now</span>
     </button>
+    {% else %}
+    <div style="font-size:var(--text-xs);color:var(--text-muted);padding:4px 0;">
+        TI sync is managed by your administrator.
+        Last synced: {% if last_sync %}{{ last_sync|timesince }} ago{% else %}Unknown{% endif %}
+    </div>
+    {% endif %}
 </div>
 
 <!-- Section 2 & 3: Detections + Upload -->

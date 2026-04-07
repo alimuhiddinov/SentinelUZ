@@ -130,3 +130,31 @@ class ViewTests(TestCase):
         response = self.client.get(reverse('alerts'))
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, 'edr_app/alerts.html')
+
+
+class UserRoleContextProcessorTests(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(
+            'owner', password='test', is_staff=True)
+        self.manager = User.objects.create_user(
+            'manager', password='test', is_staff=False)
+
+    def test_owner_gets_is_owner_true(self):
+        self.client.login(username='owner', password='test')
+        resp = self.client.get('/dashboard/')
+        self.assertTrue(resp.context.get('is_owner', False))
+
+    def test_manager_gets_is_owner_false(self):
+        self.client.login(username='manager', password='test')
+        resp = self.client.get('/dashboard/')
+        self.assertFalse(resp.context.get('is_owner', True))
+
+    def test_unauthenticated_gets_is_owner_false(self):
+        from edr_app.context_processors import user_role
+        from django.test import RequestFactory
+        from django.contrib.auth.models import AnonymousUser
+        rf = RequestFactory()
+        req = rf.get('/')
+        req.user = AnonymousUser()
+        result = user_role(req)
+        self.assertFalse(result['is_owner'])

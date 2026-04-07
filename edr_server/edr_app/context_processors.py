@@ -2,6 +2,21 @@ from django.utils import timezone
 from datetime import timedelta
 
 
+def user_role(request):
+    """
+    Adds is_owner boolean to every template context.
+    Owner = is_staff or is_superuser.
+    IT Manager = authenticated but not staff.
+    """
+    if not request.user.is_authenticated:
+        return {'is_owner': False, 'is_it_manager': False}
+    is_owner = (request.user.is_staff or request.user.is_superuser)
+    return {
+        'is_owner': is_owner,
+        'is_it_manager': not is_owner,
+    }
+
+
 def edr_stats(request):
     """Global stats for the top stats bar on every page."""
     if not request.user.is_authenticated:

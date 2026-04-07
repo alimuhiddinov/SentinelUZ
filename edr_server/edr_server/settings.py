@@ -70,6 +70,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'edr_app.context_processors.edr_stats',
+                'edr_app.context_processors.user_role',
             ],
         },
     },
