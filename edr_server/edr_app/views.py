@@ -297,6 +297,7 @@ def alerts(request):
     query_str = request.GET.get('query', '')
     date_from = request.GET.get('date_from', '')
     date_to = request.GET.get('date_to', '')
+    fmt = request.GET.get('format', '')
     page = int(request.GET.get('page', 1))
     per_page = 50
 
@@ -317,6 +318,43 @@ def alerts(request):
     start = (page - 1) * per_page
     alerts_page = qs[start:start + per_page]
     has_more = (start + per_page) < total
+
+    # CSV export
+    if fmt == 'csv':
+        import csv as csv_mod
+        import io
+        buffer = io.StringIO()
+        filename = f"alerts_{timezone.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        writer = csv_mod.writer(buffer)
+        writer.writerow(['ID', 'Timestamp', 'Severity', 'Score', 'Type', 'Status',
+                         'Process Name', 'Description', 'IoC Matched', 'Hostname', 'Event Count'])
+        row_count = 0
+        for a in qs[:5000]:
+            writer.writerow([
+                a.id,
+                a.timestamp.strftime('%Y-%m-%d %H:%M:%S') if a.timestamp else '',
+                a.severity, a.score, a.type, a.status,
+                a.process_name or '', a.description[:200],
+                a.ioc_matched or '',
+                a.client.hostname if a.client else '',
+                a.event_count,
+            ])
+            row_count += 1
+        csv_bytes = buffer.getvalue().encode('utf-8')
+        filters = {}
+        if status_filter:
+            filters['status'] = status_filter
+        if date_from:
+            filters['date_from'] = date_from
+        if date_to:
+            filters['date_to'] = date_to
+        if query_str:
+            filters['query'] = query_str
+        _save_report_record('alerts', filename, filters, row_count,
+                            request=request, content=csv_bytes)
+        response = HttpResponse(csv_bytes, content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
 
     # If AJAX request, return JSON
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':

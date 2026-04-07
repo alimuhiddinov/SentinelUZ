@@ -75,6 +75,11 @@
 .inc-ref-badge { font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 3px; background: var(--suspicious-bg); color: var(--suspicious); border: 1px solid #4c1d95; text-decoration: none; cursor: pointer; }
 .inc-ref-badge:hover { color: #c4b5fd; }
 
+.score-badge { font-family: var(--font-mono); font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; min-width: 32px; text-align: center; }
+.score-high   { background: #ef444420; color: #ef4444; }
+.score-medium { background: #f9731620; color: #f97316; }
+.score-low    { background: #3b82f620; color: #3b82f6; }
+
 .load-more-wrap { padding: 12px; text-align: center; }
 
 /* ── Query Help Tooltip ── */
@@ -252,11 +257,17 @@ function renderAlerts(data, append) {
         var statusLabel = {open:'New', in_response:'In Response', in_incident:'Incident', false_positive:'FP', closed:'Closed'};
         var countHtml = a.event_count > 1 ? '<span class="count-pill' + (a.event_count > 10 ? ' high' : '') + '">' + a.event_count + '&times;</span>' : '';
         var incHtml = a.incident_ref ? '<a href="/incidents/' + a.incident_id + '/" class="inc-ref-badge" onclick="event.stopPropagation()">' + esc(a.incident_ref) + '</a>' : '';
+        var scoreHtml = '';
+        if (a.score > 0) {
+            var sc = a.score >= 70 ? 'high' : a.score >= 40 ? 'medium' : 'low';
+            scoreHtml = '<span class="score-badge score-' + sc + '">' + a.score + '</span>';
+        }
 
         card.innerHTML =
             '<div class="ac-top">' +
                 '<input type="checkbox" class="ac-check" data-id="' + a.id + '"' + (selectedIds.has(a.id) ? ' checked' : '') + '>' +
                 '<span class="badge badge-' + a.severity.toLowerCase() + '">' + a.severity + '</span>' +
+                scoreHtml +
                 '<span class="status-badge status-' + a.status + '">' + (statusLabel[a.status] || a.status) + '</span>' +
                 incHtml +
                 countHtml +
@@ -414,7 +425,14 @@ document.getElementById('loadMoreBtn').addEventListener('click', function() { cu
 
 /* ── Export CSV ── */
 document.getElementById('exportCsvBtn').addEventListener('click', function() {
-    showToast('CSV export coming in next session');
+    var params = new URLSearchParams({ status: currentTab, format: 'csv' });
+    var q = document.getElementById('queryInput').value.trim();
+    if (q) params.set('query', q);
+    var df = document.getElementById('dateFrom').value;
+    var dt = document.getElementById('dateTo').value;
+    if (df) params.set('date_from', df);
+    if (dt) params.set('date_to', dt);
+    window.location.href = '/alerts/?' + params.toString();
 });
 
 /* ── Auto-refresh ── */

@@ -190,6 +190,9 @@
     </div>
     <div class="header-main">
         <span class="badge badge-{{ alert.severity|lower }}">{{ alert.severity }}</span>
+        {% if alert.score > 0 %}
+        <span style="font-family:var(--font-mono);font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;{% if alert.score >= 70 %}background:#ef444420;color:#ef4444{% elif alert.score >= 40 %}background:#f9731620;color:#f97316{% else %}background:#3b82f620;color:#3b82f6{% endif %}">Score: {{ alert.score }}</span>
+        {% endif %}
         <span class="status-badge-hdr status-{{ alert.status }}" id="statusBadge">{{ alert.get_status_display }}</span>
         <h1 class="alert-title">{{ alert.type }}</h1>
         <span class="alert-device mono">{{ alert.client.hostname }}</span>
