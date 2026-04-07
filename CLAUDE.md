@@ -36,8 +36,7 @@ GitHub: https://github.com/alimuhiddinov/SentinelUZ
   process(FK), port(FK), confidence_score, timestamp
 - Log: client(FK), level, message, timestamp, source
 - WindowsEventLog: client(FK), source, provider, level, event_id,
-  message, timestamp
-- Command: client(FK), command, args, executed, executed_at, response
+  message, timestamp (deprecated — hidden from admin)
 
 ## Models Added (migrations applied)
 Added to Process: parent_pid, sha256_hash, is_lolbin,
@@ -147,6 +146,7 @@ SentinelUZ fires alert with full process chain
 - Phase 4D: Complete — Reports section (Report model, auto-save CSV exports, PP-167 compliance report, reports archive page, download/delete, sidebar link)
 - Phase 4E: Complete — Dashboard incident card, alert detail status/actions, incident badges on alerts, query help tooltips, event distribution bar, sidebar incident badge
 - Phase 4: Complete — Data retention command (cleanup_old_data with --dry-run, FP 90d + closed 180d + incident protection)
+- Phase 5B: Complete — Removed Command model (security risk), removed APScheduler, /logs/ redirects to /events/, surfaced score field on alerts, vulnerabilities honest empty state, alerts CSV export
 - Phase 5: PENDING — Integration testing + Bloody Wolf demo
 
 ## Key Technical Decisions Made
