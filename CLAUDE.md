@@ -147,6 +147,7 @@ SentinelUZ fires alert with full process chain
 - Phase 4E: Complete — Dashboard incident card, alert detail status/actions, incident badges on alerts, query help tooltips, event distribution bar, sidebar incident badge
 - Phase 4: Complete — Data retention command (cleanup_old_data with --dry-run, FP 90d + closed 180d + incident protection)
 - Phase 5B: Complete — Removed Command model (security risk), removed APScheduler, /logs/ redirects to /events/, surfaced score field on alerts, vulnerabilities honest empty state, alerts CSV export
+- Phase 5C: Complete — user_role context processor (is_owner/is_it_manager), owner_required decorator, role-gated TI sync, Owner nav section (Company/Users), Admin link hidden for IT Managers
 - Phase 5: PENDING — Integration testing + Bloody Wolf demo
 
 ## Key Technical Decisions Made
