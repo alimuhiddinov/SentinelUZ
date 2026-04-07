@@ -86,10 +86,8 @@ Deploy:    Docker Compose
 ## What is NOT built yet
 - Process tree visualisation (Phase 3 Session 3.2)
 - Alerts panel card redesign (Phase 3 Session 3.3)
-- ioc_manager.html template (Phase 3 Session 3.4)
-- Dashboard overview stat cards (Phase 3 Session 3.5)
-- Help & Documentation Center (Phase 3 Session 3.6)
 - Data retention management command (Phase 4)
+- Integration testing + Bloody Wolf demo (Phase 5)
 - Integration testing + Bloody Wolf demo (Phase 5)
 
 ## EXPLICITLY OUT OF SCOPE — never suggest
@@ -140,9 +138,11 @@ SentinelUZ fires alert with full process chain
   alert_detail.html (5-tab investigation workspace),
   5 alert API endpoints (detail, events, context, network,
   acknowledge), process_injection alerts flushed
-- Phase 3 Session 3.4: PENDING — IoC Manager page
-- Phase 3 Session 3.5: PENDING — Dashboard overview redesign
-- Phase 3 Session 3.6: PENDING — Help & Documentation Center
+- Phase 3 Session 3.4: Complete — IoC Manager page (TI stats, sync, custom IOC upload, exclusion rules)
+- Phase 3 Session 3.5: Complete — Dashboard overview redesign (stat cards, severity bar, endpoint table, auto-refresh)
+- Phase 3 Session 3.6: Complete — Help & Documentation Center (9 sections, TOC, process tree example, compliance)
+- Phase 3.5A-E: Complete — Signature model, GIB-style right panel, Endpoint Events page, demo setup, integration testing
+- Phase 4A: Complete — Status workflow, query language, slide panel, CSV export, DB indexes
 - Phase 4: PENDING — Data retention command
 - Phase 5: PENDING — Integration testing + Bloody Wolf demo
 
