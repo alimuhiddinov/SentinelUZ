@@ -17,6 +17,7 @@ from .models import (
     Client, Process, Port, SuspiciousActivity, Vulnerability,
     VulnerabilityMatch, Log, WindowsEventLog,
     ThreatIntelIP, ThreatIntelHash, ExclusionRule, Event, Signature,
+    Incident, IncidentActivity, IncidentComment,
 )
 from .serializers import (
     ClientSerializer, ProcessSerializer, PortSerializer,
@@ -1469,6 +1470,154 @@ def exclusion_create(request):
     return Response({
         'id': rule.id, 'process_name': rule.process_name, 'match_mode': rule.match_mode,
     }, status=201)
+
+
+# ── Incident views ──
+
+def _log_activity(incident, user, action, detail=''):
+    IncidentActivity.objects.create(
+        incident=incident, user=user, action=action, detail=detail)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def incident_create(request):
+    title = request.data.get('title', '').strip()
+    desc = request.data.get('description', '')
+    alert_ids = request.data.get('alert_ids', [])
+    if not title:
+        return Response({'error': 'Title required'}, status=400)
+
+    inc = Incident(title=title, description=desc, created_by=request.user)
+    inc.save()
+
+    if alert_ids:
+        alerts_qs = SuspiciousActivity.objects.filter(id__in=alert_ids)
+        inc.alerts.set(alerts_qs)
+        alerts_qs.update(status='in_incident')
+        _log_activity(inc, request.user, 'Created',
+                       f'Created with {len(alert_ids)} alert(s)')
+    else:
+        _log_activity(inc, request.user, 'Created', 'Created with no alerts')
+
+    return Response({
+        'id': inc.id, 'reference': inc.reference, 'title': inc.title,
+    }, status=201)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def incident_add_alert(request, incident_id):
+    inc = get_object_or_404(Incident, id=incident_id)
+    alert_id = request.data.get('alert_id')
+    if not alert_id:
+        return Response({'error': 'alert_id required'}, status=400)
+    alert = get_object_or_404(SuspiciousActivity, id=alert_id)
+    inc.alerts.add(alert)
+    alert.status = 'in_incident'
+    alert.save(update_fields=['status'])
+    _log_activity(inc, request.user, 'Alert added',
+                   f'Alert #{alert_id} added')
+    return Response({'status': 'ok'})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def incident_status(request, incident_id):
+    inc = get_object_or_404(Incident, id=incident_id)
+    new_status = request.data.get('status', '')
+    valid = [c[0] for c in Incident.STATUS_CHOICES]
+    if new_status not in valid:
+        return Response({'error': f'Invalid status: {new_status}'}, status=400)
+    old = inc.status
+    inc.status = new_status
+    if new_status in ('resolved', 'closed') and not inc.resolved_at:
+        inc.resolved_at = timezone.now()
+    elif new_status in ('open', 'in_progress'):
+        inc.resolved_at = None
+    inc.save()
+    _log_activity(inc, request.user, 'Status changed',
+                   f'{old} → {new_status}')
+    return Response({'status': inc.status, 'resolved_at': inc.resolved_at.isoformat() if inc.resolved_at else None})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def incident_comment(request, incident_id):
+    inc = get_object_or_404(Incident, id=incident_id)
+    body = request.data.get('body', '').strip()
+    if not body:
+        return Response({'error': 'Comment body required'}, status=400)
+    comment = IncidentComment.objects.create(incident=inc, author=request.user, body=body)
+    _log_activity(inc, request.user, 'Comment added', body[:100])
+    return Response({'id': comment.id, 'body': comment.body, 'author': request.user.username,
+                     'created_at': comment.created_at.isoformat()}, status=201)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def incident_list_api(request):
+    status_filter = request.GET.get('status', '')
+    qs = Incident.objects.select_related('created_by', 'assigned_to').order_by('-created_at')
+    if status_filter and status_filter != 'all':
+        qs = qs.filter(status=status_filter)
+    data = []
+    for inc in qs[:100]:
+        data.append({
+            'id': inc.id, 'reference': inc.reference, 'title': inc.title,
+            'status': inc.status, 'severity': inc.severity,
+            'alert_count': inc.alerts.count(), 'time_open': inc.time_open,
+            'created_at': inc.created_at.isoformat(),
+            'created_by': inc.created_by.username if inc.created_by else '',
+        })
+    return Response(data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def incident_detail_api(request, incident_id):
+    inc = get_object_or_404(Incident.objects.select_related('created_by', 'assigned_to'), id=incident_id)
+    alerts_data = []
+    for a in inc.alerts.select_related('client').order_by('-last_seen'):
+        alerts_data.append({
+            'id': a.id, 'type': a.type, 'severity': a.severity,
+            'status': a.status, 'hostname': a.client.hostname if a.client else '',
+            'description': a.description[:120], 'last_seen': a.last_seen.isoformat() if a.last_seen else None,
+        })
+    activities_data = []
+    for act in inc.activities.all()[:50]:
+        activities_data.append({
+            'action': act.action, 'detail': act.detail,
+            'user': act.user.username if act.user else '', 'timestamp': act.timestamp.isoformat(),
+        })
+    comments_data = []
+    for c in inc.comments.all():
+        comments_data.append({
+            'id': c.id, 'body': c.body, 'author': c.author.username if c.author else '',
+            'created_at': c.created_at.isoformat(),
+        })
+    return Response({
+        'id': inc.id, 'reference': inc.reference, 'title': inc.title,
+        'description': inc.description, 'status': inc.status, 'severity': inc.severity,
+        'created_by': inc.created_by.username if inc.created_by else '',
+        'assigned_to': inc.assigned_to.username if inc.assigned_to else '',
+        'created_at': inc.created_at.isoformat(),
+        'updated_at': inc.updated_at.isoformat(),
+        'resolved_at': inc.resolved_at.isoformat() if inc.resolved_at else None,
+        'time_open': inc.time_open, 'alerts': alerts_data,
+        'activities': activities_data, 'comments': comments_data,
+    })
+
+
+@login_required
+def incidents_page(request):
+    return render(request, 'edr_app/incidents.html')
+
+
+@login_required
+def incident_detail_page(request, incident_id):
+    inc = get_object_or_404(Incident, id=incident_id)
+    return render(request, 'edr_app/incident_detail.html', {'incident': inc})
 
 
 @api_view(['GET'])

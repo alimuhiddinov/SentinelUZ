@@ -45,6 +45,16 @@ urlpatterns = [
     path('api/alerts/counts/', views.alert_counts, name='alert_counts'),
     path('api/alerts/bulk-action/', views.alert_bulk_action, name='alert_bulk_action'),
 
+    # Incidents
+    path('incidents/', views.incidents_page, name='incidents'),
+    path('incidents/<int:incident_id>/', views.incident_detail_page, name='incident_detail_page'),
+    path('api/incidents/', views.incident_list_api, name='incident_list_api'),
+    path('api/incidents/create/', views.incident_create, name='incident_create'),
+    path('api/incidents/<int:incident_id>/', views.incident_detail_api, name='incident_detail_api'),
+    path('api/incidents/<int:incident_id>/add-alert/', views.incident_add_alert, name='incident_add_alert'),
+    path('api/incidents/<int:incident_id>/status/', views.incident_status, name='incident_status'),
+    path('api/incidents/<int:incident_id>/comment/', views.incident_comment, name='incident_comment'),
+
     # Signatures & Events
     path('api/alerts/<int:alert_id>/signatures/', views.alert_signatures, name='alert_signatures'),
     path('api/signatures/<int:sig_id>/events/', views.signature_events, name='signature_events'),

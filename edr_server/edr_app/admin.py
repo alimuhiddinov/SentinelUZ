@@ -2,6 +2,7 @@ from django.contrib import admin
 from .models import (
     Client, Process, Port, SuspiciousActivity, Vulnerability,
     ThreatIntelIP, ThreatIntelHash, ExclusionRule, Event, Signature,
+    Incident, IncidentActivity, IncidentComment,
 )
 
 # Register your models here.
@@ -80,6 +81,27 @@ class SignatureAdmin(admin.ModelAdmin):
     list_filter = ['severity', 'mitre_tactic']
     search_fields = ['sig_id', 'plain_title', 'mitre_id']
     readonly_fields = ['created_at']
+
+
+class IncidentActivityInline(admin.TabularInline):
+    model = IncidentActivity
+    extra = 0
+    readonly_fields = ['user', 'action', 'detail', 'timestamp']
+
+
+class IncidentCommentInline(admin.TabularInline):
+    model = IncidentComment
+    extra = 0
+    readonly_fields = ['author', 'created_at']
+
+
+@admin.register(Incident)
+class IncidentAdmin(admin.ModelAdmin):
+    list_display = ['reference', 'title', 'status', 'severity', 'created_by', 'created_at']
+    list_filter = ['status', 'severity']
+    search_fields = ['title', 'description']
+    readonly_fields = ['number', 'created_at', 'updated_at']
+    inlines = [IncidentActivityInline, IncidentCommentInline]
 
 
 @admin.register(ExclusionRule)

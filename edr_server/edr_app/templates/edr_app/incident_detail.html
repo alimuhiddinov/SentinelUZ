@@ -1,0 +1,198 @@
+{% extends 'edr_app/base.html' %}
+{% block title %}{{ incident.reference }} — SentinelUZ{% endblock %}
+
+{% block extra_css %}
+.inc-layout { display: grid; grid-template-columns: 1fr 380px; gap: 16px; align-items: start; }
+.inc-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.inc-ref-lg { font-family: var(--font-mono); font-size: var(--text-lg); color: var(--accent); font-weight: 600; }
+.inc-status-select { background: var(--bg-elevated); border: 1px solid var(--border-default); border-radius: 4px; padding: 4px 10px; color: var(--text-primary); font-family: var(--font-ui); font-size: var(--text-xs); }
+
+/* Alert mini-cards */
+.inc-alert { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 4px; padding: 10px 14px; margin-bottom: 6px; display: flex; align-items: center; gap: 10px; }
+.inc-alert:hover { background: var(--bg-elevated); }
+.inc-alert-body { flex: 1; }
+.inc-alert-type { font-size: var(--text-sm); font-weight: 500; color: var(--text-primary); }
+.inc-alert-host { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-muted); }
+
+/* Comments */
+.comment-card { background: var(--bg-elevated); border-radius: 6px; padding: 12px 16px; margin-bottom: 8px; }
+.comment-header { display: flex; justify-content: space-between; margin-bottom: 6px; }
+.comment-author { font-size: var(--text-sm); font-weight: 500; color: var(--text-primary); }
+.comment-time { font-size: var(--text-xs); color: var(--text-muted); }
+.comment-body { font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.6; white-space: pre-wrap; }
+.comment-input { width: 100%; min-height: 60px; background: var(--bg-elevated); border: 1px solid var(--border-default); border-radius: 4px; padding: 8px; color: var(--text-primary); font-family: var(--font-ui); font-size: var(--text-sm); resize: vertical; }
+.comment-input:focus { outline: none; border-color: var(--accent); }
+
+/* Activity */
+.act-row { display: flex; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border-subtle); font-size: var(--text-xs); }
+.act-icon { font-size: 14px; flex-shrink: 0; }
+.act-text { color: var(--text-secondary); flex: 1; }
+.act-time { color: var(--text-muted); font-family: var(--font-mono); white-space: nowrap; }
+
+/* Right panel detail rows */
+.detail-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border-subtle); font-size: var(--text-sm); }
+.detail-label { color: var(--text-muted); }
+.detail-value { color: var(--text-primary); font-weight: 500; }
+
+@media (max-width: 900px) { .inc-layout { grid-template-columns: 1fr; } }
+{% endblock %}
+
+{% block content %}
+<a href="{% url 'incidents' %}" style="font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:12px;display:inline-block">&larr; All Incidents</a>
+
+<div class="inc-header">
+    <span class="inc-ref-lg">{{ incident.reference }}</span>
+    <h1 class="page-header" style="margin-bottom:0" id="incTitle">{{ incident.title }}</h1>
+</div>
+
+<div class="inc-layout">
+    <!-- Left Panel -->
+    <div>
+        {% if incident.description %}
+        <div class="card" style="margin-bottom:16px">
+            <div class="card-body">
+                <p style="font-size:var(--text-sm);color:var(--text-secondary);margin:0;white-space:pre-wrap">{{ incident.description }}</p>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Alerts -->
+        <div class="card" style="margin-bottom:16px">
+            <div class="card-header"><span>Alerts in this Incident</span> <span class="tab-count" id="alertCount">0</span></div>
+            <div class="card-body" id="incAlertsList">
+                <div style="color:var(--text-muted);font-size:var(--text-sm)">Loading...</div>
+            </div>
+        </div>
+
+        <!-- Comments -->
+        <div class="card">
+            <div class="card-header"><span>Comments</span></div>
+            <div class="card-body">
+                <div id="commentsList"></div>
+                <div style="margin-top:12px">
+                    <textarea class="comment-input" id="commentBody" placeholder="Add investigation notes..."></textarea>
+                    <button class="btn btn-primary" style="margin-top:8px" onclick="addComment()">Add Comment</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Panel -->
+    <div>
+        <div class="card" style="margin-bottom:16px">
+            <div class="card-header"><span>Details</span></div>
+            <div class="card-body" id="detailsPanel">
+                <div style="color:var(--text-muted);font-size:var(--text-sm)">Loading...</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><span>Activity</span></div>
+            <div class="card-body" id="activityList">
+                <div style="color:var(--text-muted);font-size:var(--text-sm)">Loading...</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+var INC_ID = {{ incident.id }};
+var ACT_ICONS = {'Created':'\uD83D\uDD34','Alert added':'\u2795','Comment added':'\uD83D\uDCAC','Status changed':'\uD83D\uDD04'};
+
+function loadDetail() {
+    fetch('/api/incidents/' + INC_ID + '/', { credentials: 'same-origin' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            renderDetails(d);
+            renderAlerts(d.alerts);
+            renderComments(d.comments);
+            renderActivity(d.activities);
+        })
+        .catch(function() { showToast('Failed to load incident'); });
+}
+
+function renderDetails(d) {
+    var statusOpts = ['open','in_progress','resolved','closed'];
+    var statusLabels = {open:'Open',in_progress:'In Progress',resolved:'Resolved',closed:'Closed'};
+    var selHtml = '<select class="inc-status-select" onchange="changeStatus(this.value)">';
+    statusOpts.forEach(function(s) {
+        selHtml += '<option value="' + s + '"' + (s === d.status ? ' selected' : '') + '>' + statusLabels[s] + '</option>';
+    });
+    selHtml += '</select>';
+
+    document.getElementById('detailsPanel').innerHTML =
+        '<div class="detail-row"><span class="detail-label">Status</span>' + selHtml + '</div>' +
+        '<div class="detail-row"><span class="detail-label">Severity</span><span class="badge badge-' + d.severity.toLowerCase() + '">' + d.severity + '</span></div>' +
+        '<div class="detail-row"><span class="detail-label">Created</span><span class="detail-value">' + new Date(d.created_at).toLocaleString() + '</span></div>' +
+        '<div class="detail-row"><span class="detail-label">Created by</span><span class="detail-value">' + esc(d.created_by) + '</span></div>' +
+        '<div class="detail-row"><span class="detail-label">Time open</span><span class="detail-value">' + d.time_open + '</span></div>' +
+        (d.resolved_at ? '<div class="detail-row"><span class="detail-label">Resolved</span><span class="detail-value">' + new Date(d.resolved_at).toLocaleString() + '</span></div>' : '');
+}
+
+function renderAlerts(alerts) {
+    document.getElementById('alertCount').textContent = alerts.length;
+    var c = document.getElementById('incAlertsList');
+    c.innerHTML = '';
+    if (!alerts.length) { c.innerHTML = '<div style="color:var(--text-muted);font-size:var(--text-sm)">No alerts linked yet.</div>'; return; }
+    alerts.forEach(function(a) {
+        var div = document.createElement('div');
+        div.className = 'inc-alert';
+        div.innerHTML = '<span class="badge badge-' + a.severity.toLowerCase() + '">' + a.severity + '</span>' +
+            '<div class="inc-alert-body"><span class="inc-alert-type">' + esc(a.type) + '</span> <span class="inc-alert-host">' + esc(a.hostname) + '</span></div>' +
+            '<a href="/alerts/' + a.id + '/" class="btn btn-sm">Investigate</a>';
+        c.appendChild(div);
+    });
+}
+
+function renderComments(comments) {
+    var c = document.getElementById('commentsList');
+    c.innerHTML = '';
+    if (!comments.length) { c.innerHTML = '<div style="color:var(--text-muted);font-size:var(--text-sm);margin-bottom:8px">No comments yet.</div>'; return; }
+    comments.forEach(function(cm) {
+        c.innerHTML += '<div class="comment-card"><div class="comment-header"><span class="comment-author">' + esc(cm.author) + '</span><span class="comment-time">' + timeAgo(cm.created_at) + '</span></div><div class="comment-body">' + esc(cm.body) + '</div></div>';
+    });
+}
+
+function renderActivity(acts) {
+    var c = document.getElementById('activityList');
+    c.innerHTML = '';
+    if (!acts.length) { c.innerHTML = '<div style="color:var(--text-muted);font-size:var(--text-sm)">No activity yet.</div>'; return; }
+    acts.forEach(function(a) {
+        c.innerHTML += '<div class="act-row"><span class="act-icon">' + (ACT_ICONS[a.action] || '\u25CF') + '</span><span class="act-text"><strong>' + esc(a.action) + '</strong>' + (a.detail ? ' — ' + esc(a.detail) : '') + ' <span style="color:var(--text-muted)">by ' + esc(a.user) + '</span></span><span class="act-time">' + timeAgo(a.timestamp) + '</span></div>';
+    });
+}
+
+function changeStatus(newStatus) {
+    fetch('/api/incidents/' + INC_ID + '/status/', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRF() },
+        body: JSON.stringify({ status: newStatus }),
+    }).then(function(r) { return r.json(); }).then(function(d) {
+        if (d.error) { showToast(d.error); return; }
+        showToast('Status updated to ' + d.status);
+        loadDetail();
+    }).catch(function() { showToast('Failed to update status'); });
+}
+
+function addComment() {
+    var body = document.getElementById('commentBody').value.trim();
+    if (!body) { showToast('Comment cannot be empty'); return; }
+    fetch('/api/incidents/' + INC_ID + '/comment/', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRF() },
+        body: JSON.stringify({ body: body }),
+    }).then(function(r) { return r.json(); }).then(function(d) {
+        if (d.error) { showToast(d.error); return; }
+        document.getElementById('commentBody').value = '';
+        showToast('Comment added');
+        loadDetail();
+    }).catch(function() { showToast('Failed to add comment'); });
+}
+
+function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+loadDetail();
+</script>
+{% endblock %}

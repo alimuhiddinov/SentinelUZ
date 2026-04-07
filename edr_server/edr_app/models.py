@@ -423,3 +423,93 @@ class Signature(models.Model):
             base = self.mitre_id.replace('.', '/')
             return f"https://attack.mitre.org/techniques/{base}/"
         return ""
+
+
+class Incident(models.Model):
+    STATUS_CHOICES = [
+        ('open',        'Open'),
+        ('in_progress', 'In Progress'),
+        ('resolved',    'Resolved'),
+        ('closed',      'Closed'),
+    ]
+    SEVERITY_CHOICES = [
+        ('CRITICAL', 'Critical'),
+        ('HIGH',     'High'),
+        ('MEDIUM',   'Medium'),
+        ('LOW',      'Low'),
+    ]
+
+    number = models.PositiveIntegerField(unique=True, editable=False)
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='open', db_index=True)
+    severity = models.CharField(max_length=10, choices=SEVERITY_CHOICES, default='HIGH')
+    created_by = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True, related_name='created_incidents')
+    assigned_to = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_incidents')
+    alerts = models.ManyToManyField('SuspiciousActivity', related_name='incidents', blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status', 'created_at']),
+            models.Index(fields=['number']),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self.number:
+            last = Incident.objects.order_by('-number').first()
+            self.number = (last.number + 1) if last else 1
+        super().save(*args, **kwargs)
+        self._update_severity()
+
+    def _update_severity(self):
+        sev_order = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
+        alert_sevs = list(self.alerts.values_list('severity', flat=True))
+        for sev in sev_order:
+            if sev in alert_sevs:
+                if self.severity != sev:
+                    Incident.objects.filter(pk=self.pk).update(severity=sev)
+                return
+
+    @property
+    def reference(self):
+        return f"INC-{self.number:04d}"
+
+    @property
+    def time_open(self):
+        end = self.resolved_at or timezone.now()
+        delta = end - self.created_at
+        hours = int(delta.total_seconds() / 3600)
+        if hours < 24:
+            return f"{hours}h open"
+        return f"{delta.days}d open"
+
+    def __str__(self):
+        return f"{self.reference}: {self.title}"
+
+
+class IncidentActivity(models.Model):
+    incident = models.ForeignKey(Incident, on_delete=models.CASCADE, related_name='activities')
+    user = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True)
+    action = models.CharField(max_length=100)
+    detail = models.TextField(blank=True)
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-timestamp']
+
+    def __str__(self):
+        return f"{self.incident.reference}: {self.action}"
+
+
+class IncidentComment(models.Model):
+    incident = models.ForeignKey(Incident, on_delete=models.CASCADE, related_name='comments')
+    author = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True)
+    body = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']

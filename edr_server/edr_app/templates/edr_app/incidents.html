@@ -1,0 +1,80 @@
+{% extends 'edr_app/base.html' %}
+{% block title %}Incidents — SentinelUZ{% endblock %}
+
+{% block extra_css %}
+.inc-card { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 16px 20px; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 16px; transition: background 0.15s; cursor: pointer; }
+.inc-card:hover { background: var(--bg-elevated); }
+.inc-ref { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--accent); font-weight: 600; white-space: nowrap; min-width: 80px; }
+.inc-body { flex: 1; }
+.inc-title { font-size: var(--text-sm); font-weight: 500; color: var(--text-primary); margin-bottom: 4px; }
+.inc-desc { font-size: var(--text-xs); color: var(--text-muted); margin-bottom: 6px; }
+.inc-meta { display: flex; gap: 12px; font-size: var(--text-xs); color: var(--text-muted); flex-wrap: wrap; }
+.inc-status { font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 3px; text-transform: uppercase; }
+.inc-status-open { background: var(--critical-bg); color: var(--critical); border: 1px solid var(--critical-border); }
+.inc-status-in_progress { background: var(--low-bg); color: var(--low); border: 1px solid var(--low-border); }
+.inc-status-resolved { background: #064e3b; color: #6ee7b7; border: 1px solid #065f46; }
+.inc-status-closed { background: var(--bg-elevated); color: var(--text-muted); border: 1px solid var(--border-subtle); }
+.inc-filters { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+    <h1 class="page-header" style="margin-bottom:0">Incidents</h1>
+    <button class="btn btn-primary" onclick="window.location='/alerts/'">Create from Alerts</button>
+</div>
+
+<div class="inc-filters">
+    <select id="statusFilter" class="filter-select" onchange="loadIncidents()">
+        <option value="">All statuses</option>
+        <option value="open" selected>Open</option>
+        <option value="in_progress">In Progress</option>
+        <option value="resolved">Resolved</option>
+        <option value="closed">Closed</option>
+    </select>
+</div>
+
+<div id="incidentsList"></div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function loadIncidents() {
+    var status = document.getElementById('statusFilter').value;
+    var url = '/api/incidents/' + (status ? '?status=' + status : '');
+    fetch(url, { credentials: 'same-origin' })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var container = document.getElementById('incidentsList');
+            container.innerHTML = '';
+            if (!data.length) {
+                container.innerHTML = '<div class="empty-state" style="padding:48px">No incidents found.</div>';
+                return;
+            }
+            data.forEach(function(inc) {
+                var statusLabel = {open:'Open',in_progress:'In Progress',resolved:'Resolved',closed:'Closed'};
+                var card = document.createElement('div');
+                card.className = 'inc-card';
+                card.onclick = function() { window.location = '/incidents/' + inc.id + '/'; };
+                card.innerHTML =
+                    '<span class="inc-ref">' + inc.reference + '</span>' +
+                    '<div class="inc-body">' +
+                        '<div class="inc-title">' + esc(inc.title) + '</div>' +
+                        '<div class="inc-meta">' +
+                            '<span class="inc-status inc-status-' + inc.status + '">' + (statusLabel[inc.status] || inc.status) + '</span>' +
+                            '<span class="badge badge-' + inc.severity.toLowerCase() + '">' + inc.severity + '</span>' +
+                            '<span>' + inc.alert_count + ' alerts</span>' +
+                            '<span>' + inc.time_open + '</span>' +
+                            '<span>by ' + esc(inc.created_by) + '</span>' +
+                        '</div>' +
+                    '</div>';
+                container.appendChild(card);
+            });
+        })
+        .catch(function() {
+            document.getElementById('incidentsList').innerHTML = '<div class="empty-state">Failed to load incidents.</div>';
+        });
+}
+function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+loadIncidents();
+</script>
+{% endblock %}

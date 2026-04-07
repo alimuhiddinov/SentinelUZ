@@ -112,6 +112,7 @@
 <!-- Bulk Bar -->
 <div class="bulk-bar" id="bulkBar">
     <span class="bulk-count" id="bulkCount">0 selected</span>
+    <button class="btn btn-primary" onclick="openIncModal(Array.from(selectedIds))">Create Incident</button>
     <button class="btn" onclick="bulkAction('in_response')">Mark In Response</button>
     <button class="btn" onclick="openBulkFPModal()">Mark False Positive</button>
     <button class="btn" onclick="bulkAction('close')">Close</button>
@@ -133,6 +134,31 @@
         <div class="modal-actions">
             <button class="btn" id="fpCancel">Cancel</button>
             <button class="btn btn-primary" id="fpConfirm">Confirm False Positive</button>
+        </div>
+    </div>
+</div>
+
+<!-- Incident Modal -->
+<div class="modal-overlay" id="incidentModal">
+    <div class="modal-box" style="max-width:500px">
+        <div class="modal-title">Create Incident</div>
+        <div style="display:flex;gap:8px;margin-bottom:16px">
+            <button class="btn btn-primary" id="newIncTab" onclick="switchIncTab('new')">New Incident</button>
+            <button class="btn" id="existIncTab" onclick="switchIncTab('existing')">Add to Existing</button>
+        </div>
+        <div id="newIncForm">
+            <input type="text" id="incTitle" class="query-input" style="width:100%;margin-bottom:8px" placeholder="Incident title *">
+            <textarea id="incDesc" class="modal-textarea" style="height:60px;margin-bottom:8px" placeholder="Description (optional)"></textarea>
+            <div id="incAlertInfo" style="font-size:var(--text-xs);color:var(--text-muted)"></div>
+        </div>
+        <div id="existIncForm" style="display:none">
+            <select id="existIncSelect" class="date-input" style="width:100%">
+                <option value="">Loading incidents...</option>
+            </select>
+        </div>
+        <div class="modal-actions">
+            <button class="btn" onclick="closeIncModal()">Cancel</button>
+            <button class="btn btn-primary" id="incSubmitBtn" onclick="submitIncident()">Create Incident</button>
         </div>
     </div>
 </div>
@@ -235,6 +261,7 @@ function buildActionsMenu(a) {
     var items = '<button onclick="window.location=\'/alerts/' + a.id + '/\'">Investigate &rarr;</button>';
     if (a.status === 'open' || a.status === 'in_response') {
         if (a.status === 'open') items += '<button onclick="doAction(' + a.id + ',\'in_response\')">Mark In Response</button>';
+        items += '<button onclick="openIncModal([' + a.id + '])">Create Incident</button>';
         items += '<button onclick="openFPModal(' + a.id + ')">Mark False Positive</button>';
         items += '<button onclick="doAction(' + a.id + ',\'close\')">Close</button>';
     }
@@ -368,6 +395,76 @@ var refreshTimer = setInterval(function() {
 }, 30000);
 
 function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+/* ── Incident Modal ── */
+var incAlertIds = [];
+var incTabMode = 'new';
+
+function openIncModal(alertIds) {
+    incAlertIds = alertIds;
+    incTabMode = 'new';
+    document.getElementById('incTitle').value = '';
+    document.getElementById('incDesc').value = '';
+    document.getElementById('incAlertInfo').textContent = alertIds.length + ' alert(s) will be linked';
+    document.getElementById('incidentModal').classList.add('open');
+    // Load existing incidents
+    fetch('/api/incidents/', { credentials: 'same-origin' })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var sel = document.getElementById('existIncSelect');
+            sel.innerHTML = '<option value="">Select incident...</option>';
+            data.forEach(function(inc) {
+                if (inc.status !== 'closed') {
+                    sel.innerHTML += '<option value="' + inc.id + '">' + inc.reference + ': ' + esc(inc.title) + '</option>';
+                }
+            });
+        }).catch(function() {});
+}
+
+function closeIncModal() { document.getElementById('incidentModal').classList.remove('open'); }
+
+function switchIncTab(mode) {
+    incTabMode = mode;
+    document.getElementById('newIncForm').style.display = mode === 'new' ? '' : 'none';
+    document.getElementById('existIncForm').style.display = mode === 'existing' ? '' : 'none';
+    document.getElementById('newIncTab').className = mode === 'new' ? 'btn btn-primary' : 'btn';
+    document.getElementById('existIncTab').className = mode === 'existing' ? 'btn btn-primary' : 'btn';
+    document.getElementById('incSubmitBtn').textContent = mode === 'new' ? 'Create Incident' : 'Add to Incident';
+}
+
+function submitIncident() {
+    if (incTabMode === 'new') {
+        var title = document.getElementById('incTitle').value.trim();
+        if (!title) { showToast('Title required'); return; }
+        fetch('/api/incidents/create/', {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRF() },
+            body: JSON.stringify({ title: title, description: document.getElementById('incDesc').value, alert_ids: incAlertIds }),
+        }).then(function(r) { return r.json(); }).then(function(d) {
+            if (d.error) { showToast(d.error); return; }
+            showToast('Incident ' + d.reference + ' created');
+            closeIncModal();
+            selectedIds.clear(); updateBulkBar();
+            loadAlerts(false); loadTabCounts();
+        }).catch(function() { showToast('Failed to create incident'); });
+    } else {
+        var incId = document.getElementById('existIncSelect').value;
+        if (!incId) { showToast('Select an incident'); return; }
+        var promises = incAlertIds.map(function(aid) {
+            return fetch('/api/incidents/' + incId + '/add-alert/', {
+                method: 'POST', credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRF() },
+                body: JSON.stringify({ alert_id: aid }),
+            });
+        });
+        Promise.all(promises).then(function() {
+            showToast('Alerts added to incident');
+            closeIncModal();
+            selectedIds.clear(); updateBulkBar();
+            loadAlerts(false); loadTabCounts();
+        }).catch(function() { showToast('Failed to add alerts'); });
+    }
+}
 
 /* ── Initial load ── */
 loadTabCounts();
