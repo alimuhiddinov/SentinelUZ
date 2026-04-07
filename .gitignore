@@ -88,3 +88,8 @@ reports_archive/
 # OS specific
 .DS_Store
 Thumbs.db
+
+# Claude Code internal files (local only)
+CLAUDE.md
+.claude/
+basic_scaner.py
