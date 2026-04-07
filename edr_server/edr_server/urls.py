@@ -23,7 +23,7 @@ from edr_app import views
 from edr_app.views import (
     ClientViewSet, dashboard, processes,
     ports, alerts, vulnerabilities, upload_data,
-    device_detail, upload_windows_logs, pending_commands
+    device_detail, upload_windows_logs,
 )
 
 router = routers.DefaultRouter()
@@ -46,7 +46,6 @@ urlpatterns = [
     path('api/', include(router.urls)),
     path('api/upload/', views.upload_data, name='upload_data'),
     path('api/logs/windows/', views.upload_windows_logs, name='upload_windows_logs'),
-    path('api/commands/pending/', views.pending_commands, name='pending_commands'),
     path('api-token-auth/', token_views.obtain_auth_token),
     path('api-auth/', include('rest_framework.urls')),
     

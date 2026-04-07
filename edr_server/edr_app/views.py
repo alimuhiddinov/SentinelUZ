@@ -802,74 +802,6 @@ def upload_data(request):
         )
 
 @api_view(['POST'])
-@csrf_exempt
-@permission_classes([AllowAny])  # Allow any client to access this endpoint
-def pending_commands(request):
-    """Endpoint for clients to fetch their pending commands"""
-    print(f"Received request at: {request.path}")
-    print(f"Request method: {request.method}")
-    print(f"Raw request data: {request.data}")
-    
-    try:
-        # Get client IP address
-        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-        if x_forwarded_for:
-            ip_address = x_forwarded_for.split(',')[0]
-        else:
-            ip_address = request.META.get('REMOTE_ADDR')
-            
-        print(f"Client IP: {ip_address}")
-
-        # Parse request data
-        data = request.data
-        if isinstance(data, str):
-            data = json.loads(data)
-        
-        # Handle various data formats
-        hostname = None
-        if isinstance(data, list):
-            if data and isinstance(data[0], dict):
-                hostname = data[0].get('hostname')
-            elif data and isinstance(data[0], str):
-                hostname = data[0]
-        elif isinstance(data, dict):
-            hostname = data.get('hostname')
-        else:
-            hostname = str(data)
-            
-        print(f"Parsed hostname: {hostname}")
-            
-        if not hostname:
-            return Response({'error': 'Hostname is required'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Get or create client
-        client, created = Client.objects.get_or_create(
-            hostname=hostname,
-            defaults={'ip_address': ip_address}
-        )
-        
-        # Update client info
-        client.ip_address = ip_address
-        client.last_seen = timezone.now()
-        client.save()
-        
-        print(f"Client {'created' if created else 'updated'}: {client}")
-        
-        # Get pending commands
-        commands = client.commands.filter(executed=False).order_by('created_at')
-        response_data = {
-            'commands': [{'id': cmd.id, 'command': cmd.command, 'args': cmd.args} for cmd in commands]
-        }
-        print(f"Sending response: {response_data}")
-        return Response(response_data)
-            
-    except Exception as e:
-        import traceback
-        print(f"Error in pending_commands: {str(e)}")
-        print(f"Traceback: {traceback.format_exc()}")
-        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-@api_view(['POST'])
 @authentication_classes([TokenAuthentication])
 @permission_classes([IsAuthenticated])
 def upload_windows_logs(request):
@@ -955,74 +887,6 @@ def upload_windows_logs(request):
     except Exception as e:
         import traceback
         print(f"Error in upload_windows_logs: {str(e)}")
-        print(f"Traceback: {traceback.format_exc()}")
-        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-@api_view(['POST'])
-@authentication_classes([TokenAuthentication])
-@permission_classes([AllowAny])
-def pending_commands(request):
-    """Endpoint for clients to fetch their pending commands"""
-    print(f"Received request at: {request.path}")
-    print(f"Request method: {request.method}")
-    print(f"Raw request data: {request.data}")
-    
-    try:
-        # Get client IP address
-        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-        if x_forwarded_for:
-            ip_address = x_forwarded_for.split(',')[0]
-        else:
-            ip_address = request.META.get('REMOTE_ADDR')
-            
-        print(f"Client IP: {ip_address}")
-
-        # Parse request data
-        data = request.data
-        if isinstance(data, str):
-            data = json.loads(data)
-        
-        # Handle various data formats
-        hostname = None
-        if isinstance(data, list):
-            if data and isinstance(data[0], dict):
-                hostname = data[0].get('hostname')
-            elif data and isinstance(data[0], str):
-                hostname = data[0]
-        elif isinstance(data, dict):
-            hostname = data.get('hostname')
-        else:
-            hostname = str(data)
-            
-        print(f"Parsed hostname: {hostname}")
-            
-        if not hostname:
-            return Response({'error': 'Hostname is required'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Get or create client
-        client, created = Client.objects.get_or_create(
-            hostname=hostname,
-            defaults={'ip_address': ip_address}
-        )
-        
-        # Update client info
-        client.ip_address = ip_address
-        client.last_seen = timezone.now()
-        client.save()
-        
-        print(f"Client {'created' if created else 'updated'}: {client}")
-        
-        # Get pending commands
-        commands = client.commands.filter(executed=False).order_by('created_at')
-        response_data = {
-            'commands': [{'id': cmd.id, 'command': cmd.command, 'args': cmd.args} for cmd in commands]
-        }
-        print(f"Sending response: {response_data}")
-        return Response(response_data)
-            
-    except Exception as e:
-        import traceback
-        print(f"Error in pending_commands: {str(e)}")
         print(f"Traceback: {traceback.format_exc()}")
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -1120,28 +984,6 @@ class ClientViewSet(viewsets.ModelViewSet):
         except Exception as e:
             print(f"Error checking vulnerabilities: {str(e)}")
 
-    @action(detail=True, methods=['post'])
-    def execute_command(self, request, pk=None):
-        try:
-            client = self.get_object()
-            command = request.data.get('command')
-            if not command:
-                return Response(
-                    {'error': 'Command is required'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            # In a real implementation, you would send the command to the client
-            # For now, we'll just return a success message
-            return Response({
-                'status': 'success',
-                'message': f'Command sent to client {client.hostname}'
-            })
-        except Exception as e:
-            return Response(
-                {'error': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
 
     @action(detail=True, methods=['post'])
     def logs(self, request, pk=None):
@@ -1160,84 +1002,6 @@ class ClientViewSet(viewsets.ModelViewSet):
         )
         
         return Response(LogSerializer(log).data, status=status.HTTP_201_CREATED)
-
-@login_required
-def kill_process(request, client_id, process_id):
-    if request.method != 'POST':
-        return JsonResponse({'success': False, 'error': 'Only POST method is allowed'})
-        
-    try:
-        client = get_object_or_404(Client, id=client_id)
-        
-        # Create kill process command
-        command = {
-            'action': 'kill_process',
-            'process_id': int(process_id)
-        }
-        
-        # Queue command for client
-        client.queue_command(command)
-        
-        # Wait for response (with timeout)
-        response = client.wait_for_response(timeout=5)  # 5 seconds timeout
-        
-        if response is None:
-            return JsonResponse({
-                'success': False,
-                'error': 'Timeout waiting for client response',
-                'requires_manual': True
-            })
-            
-        if response.get('success'):
-            # Verify process is terminated
-            verify_command = {
-                'action': 'verify_process',
-                'process_id': int(process_id)
-            }
-            verify_response = client.execute_command(verify_command)
-            
-            if verify_response.get('is_running', True):
-                return JsonResponse({
-                    'success': False,
-                    'error': f'Process {process_id} could not be terminated automatically. Manual intervention may be required.',
-                    'requires_manual': True
-                })
-            else:
-                return JsonResponse({
-                    'success': True,
-                    'message': f'Successfully terminated process {process_id}'
-                })
-        else:
-            return JsonResponse({
-                'success': False,
-                'error': f'Failed to terminate process {process_id}: {response.get("error", "Unknown error")}',
-                'requires_manual': True
-            })
-            
-    except Exception as e:
-        return JsonResponse({
-            'success': False,
-            'error': str(e),
-            'requires_manual': True
-        })
-
-@login_required
-def client_command(request, client_id):
-    if request.method == 'GET':
-        # Client checking for commands
-        client = get_object_or_404(Client, id=client_id)
-        command = client.get_pending_command()
-        return JsonResponse({'command': command} if command else {})
-        
-    elif request.method == 'POST':
-        # Client sending command response
-        client = get_object_or_404(Client, id=client_id)
-        response_data = json.loads(request.body)
-        client.set_command_response(response_data)
-        return JsonResponse({'success': True})
-        
-    return JsonResponse({'success': False, 'error': 'Invalid method'})
-
 
 @login_required
 def ioc_manager(request):
