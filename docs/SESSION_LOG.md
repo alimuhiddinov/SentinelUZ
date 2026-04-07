@@ -3,6 +3,35 @@
 
 ---
 
+## Phase 4C — Incidents System
+Date: 2026-04-07
+Status: Complete
+
+### Files Created
+- `edr_server/edr_app/templates/edr_app/incidents.html` — Incidents list page with status filter, incident cards
+- `edr_server/edr_app/templates/edr_app/incident_detail.html` — Incident detail with alerts, comments, activity timeline, status controls
+- `edr_server/edr_app/migrations/0017_incident_incidentcomment_incidentactivity_and_more.py` — Incident models migration
+
+### Files Modified
+- `edr_server/edr_app/models.py` — Added Incident (auto-increment INC-NNNN, severity from alerts, time_open), IncidentActivity, IncidentComment models
+- `edr_server/edr_app/views.py` — Added incident_create, incident_add_alert, incident_status, incident_comment, incident_list_api, incident_detail_api, incidents_page, incident_detail_page views + _log_activity helper
+- `edr_server/edr_app/urls.py` — Added 8 incident URLs (page, detail page, API list, create, detail, add-alert, status, comment)
+- `edr_server/edr_app/admin.py` — Registered IncidentAdmin with IncidentActivity/IncidentComment inlines
+- `edr_server/edr_app/templates/edr_app/alerts.html` — Added Create Incident modal (new/existing tabs), Create Incident in bulk bar and per-card menus
+- `edr_server/edr_app/templates/edr_app/base.html` — Added Incidents nav link in sidebar
+
+### Features Added
+- **Incident model**: Auto-incrementing INC-NNNN reference, severity auto-calculated from linked alerts, time_open property
+- **Incident APIs**: Create, add alert, change status, add comment, list, detail — all with activity logging
+- **Incident pages**: List page with status filter, detail page with 2-column layout (alerts+comments left, details+activity right)
+- **Create Incident modal**: On alerts page, create new or add to existing incident from selected alerts
+- **Activity timeline**: Every action (create, add alert, status change, comment) logged with user and timestamp
+
+### Commit
+0698e58
+
+---
+
 ## Phase 4B — Alert Lifecycle, Bulk Actions, Exclusion Form, Data Retention
 Date: 2026-04-07
 Status: Complete
