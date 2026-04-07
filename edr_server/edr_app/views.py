@@ -554,6 +554,7 @@ def vulnerabilities(request):
 
     context = {
         'vulnerabilities': vulnerabilities,
+        'vuln_count': VulnerabilityMatch.objects.count(),
     }
     return render(request, 'edr_app/vulnerabilities.html', context)
 
