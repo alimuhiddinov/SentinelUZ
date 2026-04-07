@@ -144,7 +144,8 @@ SentinelUZ fires alert with full process chain
 - Phase 4A: Complete — Status workflow, query language, slide panel, CSV export, DB indexes
 - Phase 4B: Complete — Alert lifecycle (acknowledged→in_response), alert_action/counts/bulk APIs, alerts tab redesign, exclusion creation form, cleanup_old_data command
 - Phase 4C: Complete — Incidents system (Incident/IncidentActivity/IncidentComment models, 8 API endpoints, list+detail pages, create modal, sidebar)
-- Phase 4: Complete — Data retention command (cleanup_old_data with --dry-run)
+- Phase 4D: Complete — Reports section (Report model, auto-save CSV exports, PP-167 compliance report, reports archive page, download/delete, sidebar link)
+- Phase 4: Complete — Data retention command (cleanup_old_data with --dry-run, FP 90d + closed 180d + incident protection)
 - Phase 5: PENDING — Integration testing + Bloody Wolf demo
 
 ## Key Technical Decisions Made
