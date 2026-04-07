@@ -3,6 +3,35 @@
 
 ---
 
+## Phase 4B — Alert Lifecycle, Bulk Actions, Exclusion Form, Data Retention
+Date: 2026-04-07
+Status: Complete
+
+### Files Created
+- `edr_server/edr_app/management/commands/cleanup_old_data.py` — Rolling retention: 48h processes, 7d short events, 30d detection events, 90d FP alerts, 180d closed alerts. Protects open/in_response/in_incident.
+- `edr_server/edr_app/migrations/0015_rename_acknowledged_to_in_response.py` — Data migration renaming status values
+- `edr_server/edr_app/migrations/0016_alter_suspiciousactivity_status.py` — Schema migration for choices update
+
+### Files Modified
+- `edr_server/edr_app/models.py` — Renamed 'acknowledged' → 'in_response' in ALERT_STATUS, fixed can_delete() to protect in_response+in_incident
+- `edr_server/edr_app/views.py` — Added alert_action() (5 actions: in_response/false_positive/close/reopen/in_incident), alert_counts(), alert_bulk_action(), exclusion_create(). Rewrote alerts() view with query/status/date filtering + AJAX JSON response.
+- `edr_server/edr_app/urls.py` — Added 4 URLs: alert action, counts, bulk-action, exclusion create
+- `edr_server/edr_app/templates/edr_app/alerts.html` — Full redesign: 6-tab status bar (New/In Response/With Incident/FP/Closed/All), query bar, date range, bulk action bar with checkboxes, per-card actions menu, FP modal with required reason, suggest exclusion on FP
+- `edr_server/edr_app/templates/edr_app/ioc_manager.html` — Added exclusion rule creation form (process name, match mode, path, hash, reason) with NAME_ONLY safety warning
+
+### Features Added
+- **Alert lifecycle**: 5-state workflow (open → in_response → false_positive/in_incident/closed) with reopen
+- **Bulk actions**: Select multiple alerts, apply in_response/false_positive/close in batch
+- **FP modal**: Required reason field, suggest exclusion rule creation on confirm
+- **Exclusion creation form**: In-page form replacing admin-only workflow
+- **Data retention**: cleanup_old_data management command with --dry-run, protects active and incident alerts
+- **Alert counts API**: Real-time tab badge counts
+
+### Commit
+2127a34
+
+---
+
 ## Phase 4A — Events Enhancement + Status Workflow + Query Language
 Date: 2026-04-07
 Status: Complete

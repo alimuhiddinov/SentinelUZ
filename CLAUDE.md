@@ -86,7 +86,6 @@ Deploy:    Docker Compose
 ## What is NOT built yet
 - Process tree visualisation (Phase 3 Session 3.2)
 - Alerts panel card redesign (Phase 3 Session 3.3)
-- Data retention management command (Phase 4)
 - Integration testing + Bloody Wolf demo (Phase 5)
 - Integration testing + Bloody Wolf demo (Phase 5)
 
@@ -143,7 +142,8 @@ SentinelUZ fires alert with full process chain
 - Phase 3 Session 3.6: Complete — Help & Documentation Center (9 sections, TOC, process tree example, compliance)
 - Phase 3.5A-E: Complete — Signature model, GIB-style right panel, Endpoint Events page, demo setup, integration testing
 - Phase 4A: Complete — Status workflow, query language, slide panel, CSV export, DB indexes
-- Phase 4: PENDING — Data retention command
+- Phase 4B: Complete — Alert lifecycle (acknowledged→in_response), alert_action/counts/bulk APIs, alerts tab redesign, exclusion creation form, cleanup_old_data command
+- Phase 4: Complete — Data retention command (cleanup_old_data with --dry-run)
 - Phase 5: PENDING — Integration testing + Bloody Wolf demo
 
 ## Key Technical Decisions Made
