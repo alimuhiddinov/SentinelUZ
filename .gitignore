@@ -82,6 +82,9 @@ _deps
 *.swo
 *~
 
+# Reports archive
+reports_archive/
+
 # OS specific
 .DS_Store
 Thumbs.db

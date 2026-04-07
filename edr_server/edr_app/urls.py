@@ -55,6 +55,12 @@ urlpatterns = [
     path('api/incidents/<int:incident_id>/status/', views.incident_status, name='incident_status'),
     path('api/incidents/<int:incident_id>/comment/', views.incident_comment, name='incident_comment'),
 
+    # Reports
+    path('reports/', views.reports_page, name='reports'),
+    path('reports/download/<int:report_id>/', views.report_download, name='report_download'),
+    path('reports/delete/<int:report_id>/', views.report_delete, name='report_delete'),
+    path('reports/compliance/', views.compliance_report, name='compliance_report'),
+
     # Signatures & Events
     path('api/alerts/<int:alert_id>/signatures/', views.alert_signatures, name='alert_signatures'),
     path('api/signatures/<int:sig_id>/events/', views.signature_events, name='signature_events'),

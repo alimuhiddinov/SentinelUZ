@@ -52,39 +52,58 @@ class Command(BaseCommand):
         )
         self._delete(qs, 'Events (detection)', dry)
 
-        # FALSE POSITIVE alerts (90 days, no incident)
-        cut90 = now - timedelta(days=90)
+        # FALSE POSITIVE alerts — delete after 90 days
+        # ONLY if not linked to any incident
+        fp_cutoff = now - timedelta(days=90)
         fp_qs = SuspiciousActivity.objects.filter(
             status='false_positive',
-            closed_at__lt=cut90,
-        ).exclude(
-            # Protect alerts linked to incidents (if relation exists)
+            closed_at__lt=fp_cutoff,
+            incidents__isnull=True,
         )
-        # Preserve FP reason in linked exclusion rules
+        # Preserve FP reason in linked exclusion rules before deleting
+        for alert in fp_qs:
+            if alert.false_positive_reason:
+                rules = ExclusionRule.objects.filter(
+                    process_name=alert.process_name,
+                    is_active=True,
+                )
+                for rule in rules:
+                    if not rule.reason:
+                        rule.reason = (
+                            f"Auto-created from FP "
+                            f"alert #{alert.id}: "
+                            f"{alert.false_positive_reason[:200]}")
+                        rule.save()
+        count_fp = fp_qs.count()
         if not dry:
-            for alert in fp_qs:
-                if alert.false_positive_reason:
-                    ExclusionRule.objects.filter(
-                        process_name=alert.process_name,
-                        is_active=True,
-                        reason='',
-                    ).update(
-                        reason=f'FP from alert #{alert.id}: '
-                               f'{alert.false_positive_reason[:200]}'
-                    )
-        self._delete(fp_qs, 'Alerts (false positive, 90d)', dry)
+            fp_qs.delete()
+        self.stdout.write(
+            f'{"[DRY] " if dry else ""}FP alerts deleted: {count_fp}')
 
-        # CLOSED alerts (180 days)
-        cut180 = now - timedelta(days=180)
+        # CLOSED alerts — delete after 180 days
+        # ONLY if not linked to any incident
+        closed_cutoff = now - timedelta(days=180)
         closed_qs = SuspiciousActivity.objects.filter(
             status='closed',
-            closed_at__lt=cut180,
+            closed_at__lt=closed_cutoff,
+            incidents__isnull=True,
         )
-        self._delete(closed_qs, 'Alerts (closed, 180d)', dry)
+        count_closed = closed_qs.count()
+        if not dry:
+            closed_qs.delete()
+        self.stdout.write(
+            f'{"[DRY] " if dry else ""}Closed alerts deleted: {count_closed}')
 
-        # NEVER deleted:
-        #   status open / in_response — active alerts
-        #   status in_incident — permanent evidence
+        # NEVER AUTO-DELETE:
+        # status='open'          — active, being worked
+        # status='acknowledged'  — active, being worked
+        # status='in_incident'   — incident demands permanence
+        # incidents__isnull=False — ANY incident link = protected
+        #
+        # The .filter(incidents__isnull=True) in both
+        # querysets above is the ONLY protection mechanism.
+        # It means: even a false_positive or closed alert
+        # is immune to deletion if it has an incident linked.
         self.stdout.write(self.style.SUCCESS('\nDone.'))
 
     def _delete(self, qs, label, dry):

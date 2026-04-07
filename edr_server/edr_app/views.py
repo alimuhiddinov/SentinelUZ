@@ -13,11 +13,12 @@ from django.utils import timezone
 from datetime import timedelta, datetime
 import requests
 import json
+import os
 from .models import (
     Client, Process, Port, SuspiciousActivity, Vulnerability,
     VulnerabilityMatch, Log, WindowsEventLog,
     ThreatIntelIP, ThreatIntelHash, ExclusionRule, Event, Signature,
-    Incident, IncidentActivity, IncidentComment,
+    Incident, IncidentActivity, IncidentComment, Report,
 )
 from .serializers import (
     ClientSerializer, ProcessSerializer, PortSerializer,
@@ -30,6 +31,31 @@ from django.http import HttpResponse, JsonResponse
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.contrib import messages
+
+REPORTS_DIR = os.path.join(settings.BASE_DIR, 'reports_archive')
+os.makedirs(REPORTS_DIR, exist_ok=True)
+
+
+def _save_report_record(report_type, filename, filters, record_count,
+                         request=None, content=b''):
+    """Save report metadata and file to reports archive."""
+    file_path = os.path.join(REPORTS_DIR, filename)
+    if content:
+        with open(file_path, 'wb') as f:
+            f.write(content)
+    file_size = (os.path.getsize(file_path)
+                 if os.path.exists(file_path) else 0)
+    user = request.user if request and request.user.is_authenticated else None
+    Report.objects.create(
+        report_type=report_type,
+        filename=filename,
+        file_path=file_path,
+        generated_by=user,
+        record_count=record_count,
+        filters_applied=json.dumps(filters),
+        file_size_bytes=file_size,
+    )
+
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -1777,11 +1803,12 @@ def endpoint_events_api(request):
 
     # CSV export
     if fmt == 'csv':
-        response = HttpResponse(content_type='text/csv')
+        import io
+        buffer = io.StringIO()
         filename = f"events_{timezone.now().strftime('%Y%m%d_%H%M%S')}.csv"
-        response['Content-Disposition'] = f'attachment; filename="{filename}"'
-        writer = csv_mod.writer(response)
+        writer = csv_mod.writer(buffer)
         writer.writerow(['Timestamp', 'Event Type', 'Hostname', 'Summary', 'Detail', 'Linked Alert'])
+        row_count = 0
         for evt in qs[:5000]:
             raw = {}
             try:
@@ -1797,6 +1824,19 @@ def endpoint_events_api(request):
                 raw.get('path', raw.get('chain', '')),
                 linked.id if linked else '',
             ])
+            row_count += 1
+        csv_bytes = buffer.getvalue().encode('utf-8')
+        filters = {}
+        if date_from:
+            filters['date_from'] = date_from
+        if date_to:
+            filters['date_to'] = date_to
+        if query_str:
+            filters['query'] = query_str
+        _save_report_record('events', filename, filters, row_count,
+                            request=request, content=csv_bytes)
+        response = HttpResponse(csv_bytes, content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
         return response
 
     # JSON pagination
@@ -1878,3 +1918,187 @@ def endpoint_events_api(request):
         'tab_counts': counts,
         'chart': chart,
     })
+
+
+# ─── Reports ────────────────────────────────────────────────
+
+@login_required
+def reports_page(request):
+    """Reports archive page."""
+    report_type = request.GET.get('type', '')
+    reports = Report.objects.all()
+    if report_type:
+        reports = reports.filter(report_type=report_type)
+    return render(request, 'edr_app/reports.html', {
+        'reports': reports,
+        'report_types': Report.REPORT_TYPES,
+        'selected_type': report_type,
+    })
+
+
+@login_required
+def report_download(request, report_id):
+    """Download a saved report file."""
+    report = get_object_or_404(Report, id=report_id)
+    if not report.file_path or not os.path.exists(report.file_path):
+        return HttpResponse('Report file not found.', status=404)
+    with open(report.file_path, 'rb') as f:
+        content = f.read()
+    response = HttpResponse(content, content_type='text/csv')
+    response['Content-Disposition'] = f'attachment; filename="{report.filename}"'
+    return response
+
+
+@login_required
+@require_POST
+def report_delete(request, report_id):
+    """Delete a report record and its file."""
+    report = get_object_or_404(Report, id=report_id)
+    if report.file_path and os.path.exists(report.file_path):
+        os.remove(report.file_path)
+    report.delete()
+    return JsonResponse({'status': 'ok'})
+
+
+@login_required
+def compliance_report(request):
+    """Generate PP-167 compliance report CSV."""
+    import csv as csv_mod
+    import io
+    from django.db.models import Avg, F
+
+    date_from = request.GET.get('date_from', '')
+    date_to = request.GET.get('date_to', '')
+
+    now = timezone.now()
+    if date_from:
+        period_start = datetime.strptime(date_from, '%Y-%m-%d').replace(
+            hour=0, minute=0, second=0)
+        period_start = timezone.make_aware(period_start)
+    else:
+        period_start = now - timedelta(days=30)
+    if date_to:
+        period_end = datetime.strptime(date_to, '%Y-%m-%d').replace(
+            hour=23, minute=59, second=59)
+        period_end = timezone.make_aware(period_end)
+    else:
+        period_end = now
+
+    # Gather stats
+    total_endpoints = Client.objects.filter(is_active=True).count()
+    total_events = Event.objects.filter(
+        timestamp__gte=period_start, timestamp__lte=period_end).count()
+
+    alerts_in_period = SuspiciousActivity.objects.filter(
+        timestamp__gte=period_start, timestamp__lte=period_end)
+    critical_count = alerts_in_period.filter(severity='CRITICAL').count()
+    high_count = alerts_in_period.filter(severity='HIGH').count()
+    medium_count = alerts_in_period.filter(severity='MEDIUM').count()
+    low_count = alerts_in_period.filter(severity='LOW').count()
+    fp_count = alerts_in_period.filter(status='false_positive').count()
+
+    incidents_in_period = Incident.objects.filter(
+        created_at__gte=period_start, created_at__lte=period_end)
+    incidents_created = incidents_in_period.count()
+    incidents_resolved = incidents_in_period.filter(
+        status__in=['resolved', 'closed']).count()
+
+    # Mean time to acknowledge (alerts that moved beyond 'open')
+    acked = alerts_in_period.exclude(status='open').filter(
+        closed_at__isnull=False)
+    if acked.exists():
+        from django.db.models import ExpressionWrapper, DurationField
+        mtta_seconds = acked.annotate(
+            ack_time=ExpressionWrapper(
+                F('closed_at') - F('timestamp'),
+                output_field=DurationField())
+        ).aggregate(avg=Avg('ack_time'))['avg']
+        mtta_hours = round(mtta_seconds.total_seconds() / 3600, 1) if mtta_seconds else 'N/A'
+    else:
+        mtta_hours = 'N/A'
+
+    # Mean time to resolve (incidents)
+    resolved = incidents_in_period.filter(resolved_at__isnull=False)
+    if resolved.exists():
+        from django.db.models import ExpressionWrapper, DurationField
+        mttr_seconds = resolved.annotate(
+            res_time=ExpressionWrapper(
+                F('resolved_at') - F('created_at'),
+                output_field=DurationField())
+        ).aggregate(avg=Avg('res_time'))['avg']
+        mttr_hours = round(mttr_seconds.total_seconds() / 3600, 1) if mttr_seconds else 'N/A'
+    else:
+        mttr_hours = 'N/A'
+
+    ti_ips = ThreatIntelIP.objects.filter(is_active=True).count()
+    ti_hashes = ThreatIntelHash.objects.filter(is_active=True).count()
+
+    # Check continuous monitoring (any gaps > 6h without events?)
+    continuous = 'Yes' if total_events > 0 else 'No'
+
+    # Build CSV
+    buffer = io.StringIO()
+    writer = csv_mod.writer(buffer)
+
+    # Section 1: Summary
+    writer.writerow(['PP-167 Compliance Report — SentinelUZ EDR'])
+    writer.writerow([])
+    writer.writerow(['Metric', 'Value'])
+    writer.writerow(['Report Period Start', period_start.strftime('%Y-%m-%d')])
+    writer.writerow(['Report Period End', period_end.strftime('%Y-%m-%d')])
+    writer.writerow(['Total Endpoints Monitored', total_endpoints])
+    writer.writerow(['Total Events Recorded', total_events])
+    writer.writerow(['CRITICAL Alerts Detected', critical_count])
+    writer.writerow(['HIGH Alerts Detected', high_count])
+    writer.writerow(['MEDIUM Alerts Detected', medium_count])
+    writer.writerow(['LOW Alerts Detected', low_count])
+    writer.writerow(['False Positives Identified', fp_count])
+    writer.writerow(['Incidents Created', incidents_created])
+    writer.writerow(['Incidents Resolved', incidents_resolved])
+    writer.writerow(['Mean Time to Acknowledge (hours)', mtta_hours])
+    writer.writerow(['Mean Time to Resolve (hours)', mttr_hours])
+    writer.writerow(['Threat Intelligence Coverage (IPs)', ti_ips])
+    writer.writerow(['Threat Intelligence Coverage (Hashes)', ti_hashes])
+    writer.writerow(['PP-167 Monitoring Continuous', continuous])
+    writer.writerow([])
+
+    # Section 2: Alert Detail
+    writer.writerow(['--- Alert Detail ---'])
+    writer.writerow([
+        'Alert ID', 'Timestamp', 'Severity', 'Type', 'Status',
+        'Process Name', 'Description', 'IoC Matched', 'Hostname',
+    ])
+    detail_count = 0
+    for a in alerts_in_period.select_related('client').order_by('-timestamp'):
+        writer.writerow([
+            a.id,
+            a.timestamp.strftime('%Y-%m-%d %H:%M:%S') if a.timestamp else '',
+            a.severity,
+            a.type,
+            a.status,
+            a.process_name or '',
+            a.description[:200],
+            a.ioc_matched or '',
+            a.client.hostname if a.client else '',
+        ])
+        detail_count += 1
+
+    writer.writerow([])
+    writer.writerow([
+        'Report generated by SentinelUZ EDR. '
+        'Continuous monitoring in compliance with PP-167 '
+        '(Presidential Resolution, 31 May 2023) and '
+        'PQ-153 (Cabinet Resolution, 30 April 2025).'
+    ])
+
+    csv_bytes = buffer.getvalue().encode('utf-8')
+    filename = f"compliance_pp167_{period_start.strftime('%Y%m%d')}_{period_end.strftime('%Y%m%d')}.csv"
+    record_count = detail_count + 1  # summary + detail rows
+    filters = {'date_from': period_start.strftime('%Y-%m-%d'),
+               'date_to': period_end.strftime('%Y-%m-%d')}
+    _save_report_record('compliance', filename, filters, record_count,
+                        request=request, content=csv_bytes)
+
+    response = HttpResponse(csv_bytes, content_type='text/csv')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response

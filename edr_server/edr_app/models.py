@@ -513,3 +513,45 @@ class IncidentComment(models.Model):
 
     class Meta:
         ordering = ['created_at']
+
+
+class Report(models.Model):
+    REPORT_TYPES = [
+        ('events',     'Events Report'),
+        ('alerts',     'Alerts Report'),
+        ('incidents',  'Incidents Report'),
+        ('compliance', 'PP-167 Compliance Report'),
+    ]
+
+    report_type = models.CharField(max_length=20, choices=REPORT_TYPES)
+    filename = models.CharField(max_length=255)
+    file_path = models.CharField(max_length=500, blank=True)
+    generated_by = models.ForeignKey(
+        'auth.User', on_delete=models.SET_NULL, null=True, blank=True)
+    generated_at = models.DateTimeField(auto_now_add=True)
+    record_count = models.IntegerField(default=0)
+    filters_applied = models.TextField(default='{}', blank=True)
+    file_size_bytes = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ['-generated_at']
+        indexes = [
+            models.Index(fields=['report_type', 'generated_at']),
+        ]
+
+    @property
+    def filters_dict(self):
+        import json
+        try:
+            return json.loads(self.filters_applied or '{}')
+        except (json.JSONDecodeError, TypeError):
+            return {}
+
+    @property
+    def file_size_display(self):
+        b = self.file_size_bytes
+        if b < 1024:
+            return f"{b} B"
+        elif b < 1024**2:
+            return f"{b/1024:.1f} KB"
+        return f"{b/1024**2:.1f} MB"

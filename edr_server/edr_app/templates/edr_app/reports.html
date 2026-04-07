@@ -1,0 +1,142 @@
+{% extends 'edr_app/base.html' %}
+{% block title %}Reports — SentinelUZ{% endblock %}
+
+{% block extra_css %}
+.rpt-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.rpt-filters { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+.rpt-table { width: 100%; border-collapse: collapse; }
+.rpt-table th { text-align: left; font-size: var(--text-xs); color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; padding: 8px 12px; border-bottom: 1px solid var(--border-subtle); }
+.rpt-table td { font-size: var(--text-sm); color: var(--text-primary); padding: 10px 12px; border-bottom: 1px solid var(--border-subtle); }
+.rpt-table tr:hover td { background: var(--bg-elevated); }
+.rpt-type { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 3px; text-transform: uppercase; }
+.rpt-type-events { background: var(--low-bg); color: var(--low); border: 1px solid var(--low-border); }
+.rpt-type-alerts { background: var(--high-bg); color: var(--high); border: 1px solid var(--high-border); }
+.rpt-type-incidents { background: var(--medium-bg); color: var(--medium); border: 1px solid var(--medium-border); }
+.rpt-type-compliance { background: var(--critical-bg); color: var(--critical); border: 1px solid var(--critical-border); }
+.rpt-actions { display: flex; gap: 6px; }
+.rpt-actions a, .rpt-actions button { font-size: var(--text-xs); padding: 3px 8px; border-radius: 4px; border: 1px solid var(--border-default); background: transparent; color: var(--text-secondary); cursor: pointer; text-decoration: none; }
+.rpt-actions a:hover { background: var(--bg-selected); color: var(--accent); }
+.rpt-actions button:hover { background: #3b1118; color: var(--critical); border-color: var(--critical-border); }
+.rpt-empty { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+.rpt-empty svg { width: 48px; height: 48px; fill: var(--border-default); margin-bottom: 12px; }
+
+/* Modal */
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 1000; align-items: center; justify-content: center; }
+.modal-overlay.active { display: flex; }
+.modal-box { background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: 8px; padding: 24px; width: 400px; max-width: 90vw; }
+.modal-box h3 { margin: 0 0 16px; font-size: var(--text-lg); color: var(--text-primary); }
+.modal-box label { display: block; font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: 4px; margin-top: 12px; }
+.modal-box input[type="date"] { width: 100%; padding: 8px 10px; border-radius: 4px; border: 1px solid var(--border-default); background: var(--bg-elevated); color: var(--text-primary); font-family: var(--font-ui); font-size: var(--text-sm); }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+{% endblock %}
+
+{% block content %}
+<div class="rpt-header">
+    <h1 class="page-header" style="margin-bottom:0">Reports</h1>
+    <button class="btn btn-primary" onclick="openComplianceModal()">Generate Compliance Report</button>
+</div>
+
+<div class="rpt-filters">
+    <select class="filter-select" onchange="filterType(this.value)">
+        <option value="">All Types</option>
+        {% for val, label in report_types %}
+        <option value="{{ val }}" {% if selected_type == val %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+    </select>
+</div>
+
+{% if reports %}
+<table class="rpt-table">
+    <thead>
+        <tr>
+            <th>Generated</th>
+            <th>Type</th>
+            <th>Filters Applied</th>
+            <th>Records</th>
+            <th>Size</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in reports %}
+        <tr id="row-{{ r.id }}">
+            <td>{{ r.generated_at|date:"M j, H:i" }}</td>
+            <td><span class="rpt-type rpt-type-{{ r.report_type }}">{{ r.get_report_type_display }}</span></td>
+            <td style="font-size:var(--text-xs);color:var(--text-muted)">
+                {% for k, v in r.filters_dict.items %}{{ k }}:{{ v }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
+            </td>
+            <td>{{ r.record_count }}</td>
+            <td>{{ r.file_size_display }}</td>
+            <td class="rpt-actions">
+                <a href="{% url 'report_download' r.id %}" title="Download">&#8595; Download</a>
+                <button onclick="deleteReport({{ r.id }})" title="Delete">&#128465; Delete</button>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="rpt-empty">
+    <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+    <p>No reports yet. Export events or alerts to generate your first report.</p>
+</div>
+{% endif %}
+
+<!-- Compliance Modal -->
+<div class="modal-overlay" id="complianceModal">
+    <div class="modal-box">
+        <h3>Generate PP-167 Compliance Report</h3>
+        <form id="complianceForm" method="GET" action="{% url 'compliance_report' %}">
+            <label for="cf_from">Date From</label>
+            <input type="date" id="cf_from" name="date_from" required>
+            <label for="cf_to">Date To</label>
+            <input type="date" id="cf_to" name="date_to" required>
+            <div class="modal-actions">
+                <button type="button" class="btn" onclick="closeComplianceModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Generate Report</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function filterType(val) {
+    const url = new URL(window.location);
+    if (val) url.searchParams.set('type', val);
+    else url.searchParams.delete('type');
+    window.location = url;
+}
+
+function openComplianceModal() {
+    const today = new Date().toISOString().slice(0,10);
+    const weekAgo = new Date(Date.now() - 7*86400000).toISOString().slice(0,10);
+    document.getElementById('cf_from').value = weekAgo;
+    document.getElementById('cf_to').value = today;
+    document.getElementById('complianceModal').classList.add('active');
+}
+function closeComplianceModal() {
+    document.getElementById('complianceModal').classList.remove('active');
+}
+document.getElementById('complianceModal').addEventListener('click', function(e) {
+    if (e.target === this) closeComplianceModal();
+});
+
+function deleteReport(id) {
+    if (!confirm('Delete this report?')) return;
+    fetch('/reports/delete/' + id + '/', {
+        method: 'POST',
+        headers: {'X-CSRFToken': '{{ csrf_token }}'}
+    }).then(r => r.json()).then(d => {
+        if (d.status === 'ok') {
+            const row = document.getElementById('row-' + id);
+            if (row) row.remove();
+            if (!document.querySelector('.rpt-table tbody tr')) {
+                location.reload();
+            }
+        }
+    });
+}
+</script>
+{% endblock %}
