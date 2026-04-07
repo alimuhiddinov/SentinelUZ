@@ -271,6 +271,52 @@
         flex-shrink: 0;
         color: var(--critical);
     }
+
+    /* ── Tooltips ── */
+    .help-tip {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-default);
+        font-size: 10px;
+        color: var(--text-muted);
+        cursor: help;
+        position: relative;
+        vertical-align: middle;
+        margin-left: 4px;
+        flex-shrink: 0;
+    }
+    .help-tip:hover { color: var(--text-secondary); border-color: var(--border-bright); }
+    .help-tip::after {
+        content: attr(data-tip);
+        position: absolute;
+        bottom: calc(100% + 8px);
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-bright);
+        border-radius: 4px;
+        padding: 8px 10px;
+        font-family: var(--font-ui);
+        font-size: var(--text-xs);
+        font-weight: 400;
+        color: var(--text-secondary);
+        line-height: 1.5;
+        white-space: normal;
+        width: 260px;
+        max-width: 260px;
+        z-index: 100;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.15s;
+        text-transform: none;
+        letter-spacing: normal;
+    }
+    .help-tip:hover::after { opacity: 1; }
 {% endblock %}
 
 {% block content %}
@@ -287,7 +333,7 @@
             <div class="alert-card sev-{{ alert.severity|lower }}">
                 <!-- Header: severity badge, type, device, count -->
                 <div class="alert-card-header">
-                    <span class="badge badge-{{ alert.severity|lower }}">{{ alert.severity }}</span>
+                    <span class="badge badge-{{ alert.severity|lower }}">{{ alert.severity }}</span><span class="help-tip" data-tip="Severity indicates how dangerous the detected activity is. CRITICAL = known malware or attacker tool. HIGH = likely malicious pattern. MEDIUM = suspicious but unconfirmed. LOW = informational only.">i</span>
                     <span class="alert-type">{{ alert.type }}</span>
                     <span class="alert-device">{{ alert.client.hostname }}</span>
                     <span class="spacer"></span>
@@ -308,8 +354,8 @@
                         {% endif %}
                         {% if alert.ioc_matched %}
                         <span class="meta-item">
-                            <span class="meta-label">IoC:</span>
-                            <span class="meta-value">{{ alert.ioc_matched|truncatechars:40 }}</span>
+                            <span class="meta-label">IoC:<span class="help-tip" data-tip="IOC = Indicator of Compromise. This shows which specific threat indicator (IP address or file hash) was matched. Click the value to copy.">i</span></span>
+                            <span class="meta-value" style="cursor:pointer" onclick="copyHash('{{ alert.ioc_matched }}')">{{ alert.ioc_matched|truncatechars:40 }}</span>
                         </span>
                         {% endif %}
                     </div>

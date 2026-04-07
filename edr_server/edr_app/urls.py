@@ -32,12 +32,20 @@ urlpatterns = [
     path('api/alerts/<int:alert_id>/network/', views.alert_network_context, name='alert_network_context'),
     path('api/alerts/<int:alert_id>/acknowledge/', views.alert_acknowledge, name='alert_acknowledge'),
     path('api/health/', views.health_check, name='health_check'),
+    path('api/dashboard/stats/', views.dashboard_stats_api, name='dashboard_stats_api'),
 
     # IoC Manager
     path('ioc-manager/', views.ioc_manager, name='ioc_manager'),
+    path('help/', views.help_center, name='help_center'),
     path('api/sync-ti/', views.sync_ti_feeds_view, name='sync_ti_feeds_view'),
     path('api/ioc/add/', views.ioc_add, name='ioc_add'),
     path('api/exclusions/<int:rule_id>/delete/', views.exclusion_delete, name='exclusion_delete'),
+
+    # Signatures & Events
+    path('api/alerts/<int:alert_id>/signatures/', views.alert_signatures, name='alert_signatures'),
+    path('api/signatures/<int:sig_id>/events/', views.signature_events, name='signature_events'),
+    path('events/', views.endpoint_events, name='endpoint_events'),
+    path('api/endpoint-events/', views.endpoint_events_api, name='endpoint_events_api'),
 ]
 
 urlpatterns += router.urls

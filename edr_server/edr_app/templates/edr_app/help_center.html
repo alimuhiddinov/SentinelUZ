@@ -1,0 +1,962 @@
+{% extends 'edr_app/base.html' %}
+
+{% block title %}Help & Documentation — SentinelUZ{% endblock %}
+
+{% block extra_css %}
+/* ── Help Layout ── */
+.help-layout {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 32px;
+    align-items: start;
+}
+.help-toc {
+    position: sticky;
+    top: 72px;
+    max-height: calc(100vh - 96px);
+    overflow-y: auto;
+}
+.help-toc-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+.help-toc-item {
+    display: block;
+    padding: 8px 12px;
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    border-left: 3px solid transparent;
+    text-decoration: none;
+    transition: all 0.15s;
+}
+.help-toc-item:hover {
+    color: var(--text-primary);
+    background: var(--bg-elevated);
+}
+.help-toc-item.active {
+    color: var(--text-primary);
+    background: var(--bg-selected);
+    border-left-color: var(--accent);
+}
+
+/* ── Help Sections ── */
+.help-section {
+    margin-bottom: 48px;
+    scroll-margin-top: 80px;
+}
+.help-section h2 {
+    font-size: var(--text-xl);
+    font-weight: 600;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-subtle);
+    padding-bottom: 12px;
+    margin-bottom: 20px;
+}
+.help-text {
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    line-height: 1.8;
+    margin-bottom: 16px;
+}
+.help-text strong { color: var(--text-primary); font-weight: 500; }
+
+/* ── Severity Card Grid ── */
+.severity-card-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+.severity-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    border-top: 3px solid var(--border-default);
+    padding: 20px;
+}
+.severity-card h3 {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+.severity-card .sev-tagline {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 12px;
+}
+.severity-card .sev-desc {
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-bottom: 12px;
+}
+.severity-card .sev-examples {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    margin-bottom: 12px;
+}
+.severity-card .sev-action {
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    background: var(--bg-elevated);
+    border-radius: 4px;
+    padding: 8px 10px;
+    line-height: 1.5;
+}
+.sev-critical { border-top-color: var(--critical); }
+.sev-critical h3 { color: var(--critical); }
+.sev-critical .sev-tagline { color: var(--critical); }
+.sev-high { border-top-color: var(--high); }
+.sev-high h3 { color: var(--high); }
+.sev-high .sev-tagline { color: var(--high); }
+.sev-medium { border-top-color: var(--medium); }
+.sev-medium h3 { color: var(--medium); }
+.sev-medium .sev-tagline { color: var(--medium); }
+.sev-low { border-top-color: var(--low); }
+.sev-low h3 { color: var(--low); }
+.sev-low .sev-tagline { color: var(--low); }
+
+/* ── LOLBin Table ── */
+.lolbin-table { margin-bottom: 16px; }
+.lolbin-table td:first-child {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--lolbin);
+    white-space: nowrap;
+    width: 160px;
+}
+
+/* ── Process Chain Example ── */
+.chain-example {
+    background: var(--bg-page);
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    padding: 16px 20px;
+    margin-bottom: 16px;
+    overflow-x: auto;
+}
+/* Reuse process_tree.html CSS */
+.tree-node {
+    display: flex;
+    align-items: flex-start;
+    min-height: 32px;
+    padding: 2px 0;
+    position: relative;
+}
+.tree-indent {
+    position: relative;
+    flex-shrink: 0;
+    min-height: 32px;
+}
+.tree-guide {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 1px;
+    background: transparent;
+}
+.tree-guide.active { background: var(--border-default); }
+.tree-connector {
+    position: absolute;
+    right: 0;
+    width: 12px;
+    height: 16px;
+    top: 0;
+}
+.tree-connector::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 15px;
+    width: 12px; height: 1px;
+    background: var(--border-default);
+}
+.tree-connector.is-mid::after {
+    content: '';
+    position: absolute;
+    left: 0; top: 0;
+    width: 1px; height: 100%;
+    background: var(--border-default);
+}
+.tree-connector.is-last::after {
+    content: '';
+    position: absolute;
+    left: 0; top: 0;
+    width: 1px; height: 16px;
+    background: var(--border-default);
+}
+.tree-content {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    flex: 1;
+    min-height: 28px;
+}
+.tree-node[data-suspicious="true"] .tree-content {
+    background: var(--critical-bg);
+    border-left: 2px solid var(--critical);
+}
+.tree-node[data-lolbin="true"]:not([data-suspicious="true"]) .tree-content {
+    background: var(--lolbin-bg);
+    border-left: 2px solid var(--lolbin);
+}
+.tree-name {
+    font-family: var(--font-ui);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    color: var(--text-primary);
+}
+.tree-name.lolbin { color: var(--lolbin); }
+.tree-name.suspicious { color: var(--critical); }
+.tree-pid {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+}
+.badge-lolbin {
+    background: var(--lolbin-bg);
+    color: var(--lolbin);
+    border: 1px solid var(--high-border);
+    font-family: var(--font-ui);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    padding: 1px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+}
+.badge-suspicious {
+    background: var(--critical-bg);
+    color: var(--critical);
+    border: 1px solid var(--critical-border);
+    font-family: var(--font-ui);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    padding: 1px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+}
+.chain-annotation {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    padding-left: 8px;
+    white-space: nowrap;
+}
+
+/* ── Callout ── */
+.callout {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    padding: 16px;
+    margin: 16px 0;
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+.callout-warning {
+    background: var(--high-bg);
+    border-color: var(--high-border);
+    border-left-color: var(--high);
+    color: var(--high);
+}
+
+/* ── Steps ── */
+.steps-list { margin-bottom: 16px; }
+.step-item {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 20px;
+    align-items: flex-start;
+}
+.step-number {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--text-inverse);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    flex-shrink: 0;
+}
+.step-body { flex: 1; }
+.step-title {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+.step-desc {
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+/* ── Safety Badges (from IoC Manager) ── */
+.safety-low { background: var(--high-bg); color: var(--high); border-color: var(--high-border); }
+.safety-medium { background: var(--medium-bg); color: var(--medium); border-color: var(--medium-border); }
+.safety-high { background: var(--low-bg); color: var(--low); border-color: var(--low-border); }
+
+/* ── Match Mode Cards ── */
+.match-mode-list { margin-bottom: 16px; }
+.match-mode-item {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    padding: 12px 16px;
+    margin-bottom: 8px;
+}
+.match-mode-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+.match-mode-name {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+.match-mode-desc {
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+/* ── TI Info Cards ── */
+.ti-card-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+.ti-info-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    padding: 16px;
+}
+.ti-info-card h4 {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+}
+.ti-info-card p {
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin: 0;
+}
+.ti-info-card .ti-source {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    margin-top: 6px;
+}
+
+/* ── Compliance ── */
+.compliance-check {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 10px;
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+.check-icon {
+    color: var(--status-online);
+    font-size: var(--text-base);
+    flex-shrink: 0;
+    line-height: 1.4;
+}
+.compliance-block {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-top: 3px solid var(--accent);
+    border-radius: 6px;
+    padding: 20px;
+    margin-bottom: 16px;
+}
+.compliance-block h3 {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+.compliance-block .comp-sub {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    margin-bottom: 16px;
+}
+
+/* ── Quick Reference ── */
+.quick-ref {
+    border: 2px dashed var(--border-bright);
+    border-radius: 6px;
+    background: var(--bg-elevated);
+    padding: 24px;
+}
+.quick-ref-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+}
+.quick-ref h3 {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 10px;
+}
+.quick-ref-item {
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    line-height: 1.8;
+}
+.quick-ref-item .mono {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+.print-btn {
+    float: right;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-default);
+    border-radius: 4px;
+    padding: 5px 12px;
+    font-family: var(--font-ui);
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+.print-btn:hover { color: var(--text-primary); border-color: var(--border-bright); }
+
+/* ── Print ── */
+@media print {
+    .sidebar, .stats-bar, .help-toc, .page-header, .print-btn { display: none !important; }
+    .main-content { margin: 0 !important; padding: 0 !important; }
+    .help-layout { display: block !important; }
+    .help-section { display: none !important; }
+    #quick-reference { display: block !important; }
+    body { background: white !important; color: black !important; }
+    .quick-ref { border-color: #999 !important; background: white !important; }
+    .quick-ref h3 { color: black !important; }
+    .quick-ref-item { color: #333 !important; }
+    .quick-ref-item .mono { color: #666 !important; }
+}
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+    .help-layout {
+        grid-template-columns: 1fr;
+    }
+    .help-toc {
+        position: static;
+        max-height: none;
+        overflow-x: auto;
+        margin-bottom: 24px;
+    }
+    .help-toc-list {
+        display: flex;
+        gap: 0;
+        white-space: nowrap;
+    }
+    .help-toc-item {
+        border-left: none;
+        border-bottom: 3px solid transparent;
+        padding: 8px 14px;
+    }
+    .help-toc-item.active {
+        border-bottom-color: var(--accent);
+        border-left-color: transparent;
+    }
+    .severity-card-grid, .ti-card-grid, .quick-ref-grid { grid-template-columns: 1fr; }
+}
+{% endblock %}
+
+{% block content %}
+<h1 class="page-header">Help & Documentation</h1>
+
+<div class="help-layout">
+    <!-- Table of Contents -->
+    <nav class="help-toc">
+        <ul class="help-toc-list">
+            <li><a href="#getting-started" class="help-toc-item active">Getting Started</a></li>
+            <li><a href="#severity-guide" class="help-toc-item">Alert Severity Guide</a></li>
+            <li><a href="#lolbins" class="help-toc-item">What is a LOLBin?</a></li>
+            <li><a href="#process-chain" class="help-toc-item">Reading a Process Chain</a></li>
+            <li><a href="#alert-response" class="help-toc-item">What To Do When You See An Alert</a></li>
+            <li><a href="#exclusion-rules" class="help-toc-item">Managing Exclusion Rules</a></li>
+            <li><a href="#threat-intelligence" class="help-toc-item">Threat Intelligence</a></li>
+            <li><a href="#compliance" class="help-toc-item">Regulatory Compliance</a></li>
+            <li><a href="#quick-reference" class="help-toc-item">Quick Reference Card</a></li>
+        </ul>
+    </nav>
+
+    <!-- Content -->
+    <div class="help-content">
+
+        <!-- ══ SECTION 1: Getting Started ══ -->
+        <section class="help-section" id="getting-started">
+            <h2>Getting Started</h2>
+            <div class="help-text">
+                <p><strong>SentinelUZ</strong> is an endpoint monitoring system that watches what programs are running on your organisation's Windows computers. It detects suspicious activity &mdash; like known malware, connections to attacker-controlled servers, or misuse of built-in Windows tools &mdash; and alerts you so you can take action.</p>
+            </div>
+
+            <div class="card" style="margin-bottom:16px">
+                <div class="card-header"><span>How Monitoring Works</span></div>
+                <div class="card-body">
+                    <div class="help-text" style="margin:0">
+                        <p><strong>1.</strong> A small program (the &lsquo;agent&rsquo;) runs on each Windows computer you want to monitor. It checks what processes are running and what network connections are active every 30 seconds.</p>
+                        <p><strong>2.</strong> The agent sends this information to your SentinelUZ server.</p>
+                        <p><strong>3.</strong> The server compares this data against a database of known threats &mdash; over 209,000 blacklisted IP addresses and 1,300+ known malware file signatures.</p>
+                        <p><strong>4.</strong> If a match is found, or if suspicious behaviour is detected, an alert appears on your dashboard.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header"><span>Installation</span></div>
+                <div class="card-body">
+                    <div class="help-text" style="margin:0">
+                        <p><strong>What you need:</strong> A Windows 10 or later computer, the SentinelUZ agent file (<span class="mono">edr_client.exe</span>), and administrator access on the target computer.</p>
+                        <p><strong>1.</strong> Copy the agent folder to the target computer.</p>
+                        <p><strong>2.</strong> Double-click <span class="mono">edr_client.exe</span>.</p>
+                        <p><strong>3.</strong> Click &lsquo;Yes&rsquo; on the Windows security prompt (UAC).</p>
+                        <p><strong>4.</strong> The agent installs itself as a Windows Service and starts monitoring automatically. It will start on every boot &mdash; no further action needed.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ══ SECTION 2: Alert Severity Guide ══ -->
+        <section class="help-section" id="severity-guide">
+            <h2>Alert Severity Guide</h2>
+            <div class="help-text">
+                <p>Every alert has a severity level that tells you how urgent it is. Here's what each level means and what you should do:</p>
+            </div>
+
+            <div class="severity-card-grid">
+                <div class="severity-card sev-critical">
+                    <h3>CRITICAL</h3>
+                    <div class="sev-tagline">Immediate threat detected</div>
+                    <div class="sev-desc">A known malware file or active attacker tool has been found on one of your computers. This requires immediate attention.</div>
+                    <div class="sev-examples"><strong>Examples:</strong> Known malware hash match, connection to a command-and-control server, known attack tool running.</div>
+                    <div class="sev-action"><strong>Action:</strong> Isolate the affected computer from the network immediately. Do not shut it down &mdash; this preserves evidence.</div>
+                </div>
+
+                <div class="severity-card sev-high">
+                    <h3>HIGH</h3>
+                    <div class="sev-tagline">Likely malicious activity</div>
+                    <div class="sev-desc">A suspicious pattern has been detected that strongly suggests an attack is in progress or being prepared.</div>
+                    <div class="sev-examples"><strong>Examples:</strong> Connection to a blacklisted IP address, ransomware preparation tools running, suspicious process chains.</div>
+                    <div class="sev-action"><strong>Action:</strong> Investigate within the hour. Check the process chain to understand what triggered the alert.</div>
+                </div>
+
+                <div class="severity-card sev-medium">
+                    <h3>MEDIUM</h3>
+                    <div class="sev-tagline">Suspicious but not confirmed</div>
+                    <div class="sev-desc">A Windows tool commonly misused by attackers was launched from an unusual location or parent process.</div>
+                    <div class="sev-examples"><strong>Examples:</strong> PowerShell launched by Microsoft Word, command prompt opened by a PDF reader.</div>
+                    <div class="sev-action"><strong>Action:</strong> Review during your next check-in. Verify whether the activity was expected.</div>
+                </div>
+
+                <div class="severity-card sev-low">
+                    <h3>LOW</h3>
+                    <div class="sev-tagline">Informational</div>
+                    <div class="sev-desc">A built-in Windows tool that can be misused was detected, but without additional suspicious context.</div>
+                    <div class="sev-examples"><strong>Examples:</strong> cmd.exe or PowerShell running on its own (no suspicious parent process).</div>
+                    <div class="sev-action"><strong>Action:</strong> No immediate action needed. Review if it appears repeatedly on the same computer.</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ══ SECTION 3: What is a LOLBin? ══ -->
+        <section class="help-section" id="lolbins">
+            <h2>What is a LOLBin?</h2>
+            <div class="help-text">
+                <p><strong>LOLBin</strong> stands for &ldquo;Living Off the Land Binary&rdquo;. These are legitimate Windows tools that are pre-installed on every Windows computer. Attackers misuse them because security software often trusts these programs &mdash; they're part of Windows itself.</p>
+                <p>SentinelUZ monitors <strong>17 LOLBins</strong>. Here's what each one does normally, and how attackers misuse it:</p>
+            </div>
+
+            <div class="card">
+                <div class="card-body" style="padding:0">
+                    <div class="table-wrap">
+                        <table class="lolbin-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Tool</th>
+                                    <th scope="col">Normal Use</th>
+                                    <th scope="col">How Attackers Misuse It</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>cmd.exe</td><td>Windows command prompt</td><td>Runs malicious scripts silently in the background</td></tr>
+                                <tr><td>powershell.exe</td><td>Windows automation and scripting tool</td><td>Downloads and runs malware from the internet without saving files to disk</td></tr>
+                                <tr><td>pwsh.exe</td><td>PowerShell Core (cross-platform version)</td><td>Same as powershell.exe &mdash; used for fileless attacks</td></tr>
+                                <tr><td>wscript.exe</td><td>Runs Windows Script files (.vbs, .js)</td><td>Executes malicious scripts disguised as documents or updates</td></tr>
+                                <tr><td>cscript.exe</td><td>Console-based Windows Script host</td><td>Runs malicious scripts from the command line</td></tr>
+                                <tr><td>mshta.exe</td><td>Runs HTML-based applications</td><td>Executes malicious code hidden inside HTML files &mdash; used by Bloody Wolf in Uzbekistan</td></tr>
+                                <tr><td>regsvr32.exe</td><td>Registers Windows components</td><td>Loads malicious code while bypassing security restrictions</td></tr>
+                                <tr><td>rundll32.exe</td><td>Runs code stored in DLL files</td><td>Executes malware disguised as a Windows component</td></tr>
+                                <tr><td>certutil.exe</td><td>Manages security certificates</td><td>Downloads malware from the internet (used as a file downloader)</td></tr>
+                                <tr><td>msiexec.exe</td><td>Installs Windows programs (.msi files)</td><td>Installs malware disguised as legitimate software</td></tr>
+                                <tr><td>wmic.exe</td><td>Windows Management tool for system info</td><td>Runs commands remotely across a network of computers</td></tr>
+                                <tr><td>bitsadmin.exe</td><td>Manages background file transfers</td><td>Silently downloads malware in the background</td></tr>
+                                <tr><td>vssadmin.exe</td><td>Manages Windows backup snapshots</td><td>Deletes backup copies before deploying ransomware</td></tr>
+                                <tr><td>wbadmin.exe</td><td>Windows Backup tool</td><td>Deletes system backups before encrypting files</td></tr>
+                                <tr><td>bcdedit.exe</td><td>Edits Windows boot settings</td><td>Disables Windows recovery mode to prevent system restoration</td></tr>
+                                <tr><td>cipher.exe</td><td>Encrypts files on NTFS drives</td><td>Securely wipes deleted files to destroy forensic evidence</td></tr>
+                                <tr><td>diskshadow.exe</td><td>Manages disk shadow copies</td><td>Deletes shadow copies or executes hidden scripts</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ══ SECTION 4: Reading a Process Chain ══ -->
+        <section class="help-section" id="process-chain">
+            <h2>Reading a Process Chain</h2>
+            <div class="help-text">
+                <p>When SentinelUZ detects a suspicious process, it shows you the &ldquo;process chain&rdquo; &mdash; a family tree of programs that explains how the suspicious program was started. Here is an example:</p>
+            </div>
+
+            <div class="chain-example">
+                <!-- Root: explorer.exe -->
+                <div class="tree-node">
+                    <div class="tree-indent" style="width:16px"></div>
+                    <div class="tree-content">
+                        <span class="tree-name">explorer.exe</span>
+                        <span class="tree-pid">PID: 1204</span>
+                        <span class="chain-annotation">&larr; Desktop shell (normal)</span>
+                    </div>
+                </div>
+                <!-- Child: WINWORD.EXE -->
+                <div class="tree-node">
+                    <div class="tree-indent" style="width:36px">
+                        <div class="tree-guide active" style="left:8px"></div>
+                        <div class="tree-connector is-last" style="left:8px"></div>
+                    </div>
+                    <div class="tree-content">
+                        <span class="tree-name">WINWORD.EXE</span>
+                        <span class="tree-pid">PID: 3456</span>
+                        <span class="chain-annotation">&larr; Microsoft Word (normal)</span>
+                    </div>
+                </div>
+                <!-- Grandchild: cmd.exe (LOLBin) -->
+                <div class="tree-node" data-lolbin="true">
+                    <div class="tree-indent" style="width:56px">
+                        <div class="tree-guide" style="left:8px"></div>
+                        <div class="tree-guide active" style="left:28px"></div>
+                        <div class="tree-connector is-last" style="left:28px"></div>
+                    </div>
+                    <div class="tree-content">
+                        <span class="tree-name lolbin">cmd.exe</span>
+                        <span class="tree-pid">PID: 7891</span>
+                        <span class="badge-lolbin">LOLBIN</span>
+                        <span class="chain-annotation">&larr; Command prompt (suspicious!)</span>
+                    </div>
+                </div>
+                <!-- Great-grandchild: powershell.exe (Suspicious) -->
+                <div class="tree-node" data-suspicious="true">
+                    <div class="tree-indent" style="width:76px">
+                        <div class="tree-guide" style="left:8px"></div>
+                        <div class="tree-guide" style="left:28px"></div>
+                        <div class="tree-guide active" style="left:48px"></div>
+                        <div class="tree-connector is-last" style="left:48px"></div>
+                    </div>
+                    <div class="tree-content">
+                        <span class="tree-name suspicious">powershell.exe</span>
+                        <span class="tree-pid">PID: 8012</span>
+                        <span class="badge-suspicious">SUSPICIOUS</span>
+                        <span class="chain-annotation">&larr; PowerShell (attack pattern!)</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="callout">
+                <p><strong>Why is this suspicious?</strong></p>
+                <p>Microsoft Word should never open a command prompt. This pattern is common in phishing attacks &mdash; a malicious document tricks Word into running commands.</p>
+                <p style="margin-top:10px"><strong>What SentinelUZ flags:</strong></p>
+                <p>&bull; <span style="color:var(--lolbin)">cmd.exe</span> gets a <span class="badge-lolbin">LOLBIN</span> badge because it's a commonly misused Windows tool.</p>
+                <p>&bull; The chain gets a <span class="badge-suspicious">SUSPICIOUS</span> badge because PowerShell launched from a command prompt that was started by Word is a known attack pattern.</p>
+                <p>&bull; The alert severity is <span class="badge badge-high">HIGH</span> because of the suspicious parent chain.</p>
+            </div>
+        </section>
+
+        <!-- ══ SECTION 5: What To Do When You See An Alert ══ -->
+        <section class="help-section" id="alert-response">
+            <h2>What To Do When You See An Alert</h2>
+            <div class="help-text">
+                <p>When an alert appears on your dashboard, follow these steps:</p>
+            </div>
+
+            <div class="steps-list">
+                <div class="step-item">
+                    <div class="step-number">1</div>
+                    <div class="step-body">
+                        <div class="step-title">Don't panic</div>
+                        <div class="step-desc">Alerts mean SentinelUZ noticed something worth investigating. Not every alert means you've been hacked &mdash; some are false positives from legitimate activity.</div>
+                    </div>
+                </div>
+                <div class="step-item">
+                    <div class="step-number">2</div>
+                    <div class="step-body">
+                        <div class="step-title">Check the severity</div>
+                        <div class="step-desc">CRITICAL alerts need immediate attention. LOW alerts can wait for your next regular check-in. See the <a href="#severity-guide">Severity Guide</a> above.</div>
+                    </div>
+                </div>
+                <div class="step-item">
+                    <div class="step-number">3</div>
+                    <div class="step-body">
+                        <div class="step-title">Open the alert detail page</div>
+                        <div class="step-desc">Click &lsquo;Investigate&rsquo; on the alert card. This opens a detailed view with five tabs of information.</div>
+                    </div>
+                </div>
+                <div class="step-item">
+                    <div class="step-number">4</div>
+                    <div class="step-body">
+                        <div class="step-title">Look at the Process Chain tab</div>
+                        <div class="step-desc">This shows you which program started the suspicious activity. If the chain looks like normal work (e.g., you were running a script yourself), it may be a false positive.</div>
+                    </div>
+                </div>
+                <div class="step-item">
+                    <div class="step-number">5</div>
+                    <div class="step-body">
+                        <div class="step-title">Check the Network tab</div>
+                        <div class="step-desc">If the alert involves a network connection, check whether the IP address is known to your organisation. Internal IPs (<span class="mono">192.168.x.x</span>, <span class="mono">10.x.x.x</span>) are usually safe.</div>
+                    </div>
+                </div>
+                <div class="step-item">
+                    <div class="step-number">6</div>
+                    <div class="step-body">
+                        <div class="step-title">Take action</div>
+                        <div class="step-desc">
+                            &bull; <strong>If it looks malicious:</strong> Disconnect the computer from the network. Contact your IT security provider or CERT.uz.<br>
+                            &bull; <strong>If it's a false positive:</strong> Click &lsquo;Acknowledge&rsquo; to mark the alert as reviewed. Consider adding an exclusion rule if it triggers alerts regularly.<br>
+                            &bull; <strong>If you're not sure:</strong> Leave the alert unacknowledged and escalate to someone with more experience.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ══ SECTION 6: Managing Exclusion Rules ══ -->
+        <section class="help-section" id="exclusion-rules">
+            <h2>Managing Exclusion Rules</h2>
+            <div class="help-text">
+                <p>Exclusion rules tell SentinelUZ to stop alerting on a specific program. Use them for known-safe software that keeps triggering false positives.</p>
+            </div>
+
+            <div class="callout-warning callout">
+                Be careful: every exclusion rule is a blind spot. Only exclude programs you are certain are safe.
+            </div>
+
+            <div class="help-text"><p>There are four match modes, from least safe to most safe:</p></div>
+
+            <div class="match-mode-list">
+                <div class="match-mode-item">
+                    <div class="match-mode-header">
+                        <span class="match-mode-name">NAME_ONLY</span>
+                        <span class="badge safety-low">LOW SAFETY</span>
+                    </div>
+                    <div class="match-mode-desc">Matches any program with this filename. <strong>Warning:</strong> An attacker can name their malware &lsquo;explorer.exe&rsquo; and it will be excluded. Only use this as a last resort.</div>
+                </div>
+                <div class="match-mode-item">
+                    <div class="match-mode-header">
+                        <span class="match-mode-name">NAME_AND_PATH</span>
+                        <span class="badge safety-medium">MEDIUM</span>
+                    </div>
+                    <div class="match-mode-desc">Matches the filename AND the folder it runs from. Better than name-only, but an attacker could place malware in the same folder.</div>
+                </div>
+                <div class="match-mode-item">
+                    <div class="match-mode-header">
+                        <span class="match-mode-name">HASH_ONLY</span>
+                        <span class="badge safety-high">HIGH</span>
+                    </div>
+                    <div class="match-mode-desc">Matches the exact file signature (SHA256 hash). Even if an attacker uses the same filename, a different file won't match. <strong>Recommended for most exclusions.</strong></div>
+                </div>
+                <div class="match-mode-item">
+                    <div class="match-mode-header">
+                        <span class="match-mode-name">ALL</span>
+                        <span class="badge safety-high">HIGHEST</span>
+                    </div>
+                    <div class="match-mode-desc">All three must match: name, path, and hash. The strictest option. Use when you want to be absolutely sure.</div>
+                </div>
+            </div>
+
+            <div class="callout-warning callout">
+                <strong>Recommendation:</strong> Always use HASH_ONLY or ALL match mode. NAME_ONLY should be avoided &mdash; it's the easiest for attackers to bypass.
+            </div>
+
+            <div class="help-text">
+                <p><a href="{% url 'ioc_manager' %}">Manage exclusion rules in the IoC Manager &rarr;</a></p>
+            </div>
+        </section>
+
+        <!-- ══ SECTION 7: Threat Intelligence ══ -->
+        <section class="help-section" id="threat-intelligence">
+            <h2>Threat Intelligence</h2>
+            <div class="help-text">
+                <p>SentinelUZ compares activity on your computers against a database of known threats. This database is called &ldquo;threat intelligence&rdquo; (TI). Here's what's loaded:</p>
+            </div>
+
+            <div class="ti-card-grid">
+                <div class="ti-info-card">
+                    <h4>209,000+ Blacklisted IPs</h4>
+                    <p>IP addresses known to be used by attackers, malware command servers, and botnets.</p>
+                    <div class="ti-source">Sources: IPsum, Feodo Tracker, ThreatFox</div>
+                </div>
+                <div class="ti-info-card">
+                    <h4>1,300+ Malware Hashes</h4>
+                    <p>File signatures (SHA256) of known malware families.</p>
+                    <div class="ti-source">Sources: MalwareBazaar, targeted family imports</div>
+                </div>
+                <div class="ti-info-card">
+                    <h4>Targeted Families</h4>
+                    <p>Malware specifically relevant to Uzbekistan and Central Asia.</p>
+                    <div class="ti-source">Families: NetSupport RAT, LockBit, BlackCat/ALPHV, Rhysida, Ajina.Banker</div>
+                </div>
+                <div class="ti-info-card">
+                    <h4>17 LOLBin Rules</h4>
+                    <p>Built-in Windows tools monitored for misuse.</p>
+                    <div class="ti-source">See the <a href="#lolbins">LOLBin section</a> above for the full list.</div>
+                </div>
+            </div>
+
+            <div class="help-text">
+                <p><strong>How syncing works:</strong> Threat intelligence is updated by clicking &lsquo;Sync Now&rsquo; on the IoC Manager page. This downloads the latest threat data from public security feeds. In a production environment, this would run automatically every day.</p>
+                <p><a href="{% url 'ioc_manager' %}">Go to IoC Manager &rarr;</a></p>
+            </div>
+        </section>
+
+        <!-- ══ SECTION 8: Regulatory Compliance ══ -->
+        <section class="help-section" id="compliance">
+            <h2>Regulatory Compliance</h2>
+            <div class="help-text">
+                <p>Uzbekistan's regulatory framework requires organisations to implement cybersecurity monitoring. SentinelUZ helps you meet these requirements:</p>
+            </div>
+
+            <div class="compliance-block">
+                <h3>PP-167 (Presidential Resolution, September 2023)</h3>
+                <div class="comp-sub">Mandatory cybersecurity measures for government and critical infrastructure organisations.</div>
+                <div class="compliance-check"><span class="check-icon">&#10003;</span><span><strong>Endpoint monitoring</strong> &mdash; SentinelUZ provides real-time monitoring of all registered Windows endpoints.</span></div>
+                <div class="compliance-check"><span class="check-icon">&#10003;</span><span><strong>Incident detection</strong> &mdash; Automated detection of known malware, suspicious process chains, and network connections to attacker infrastructure.</span></div>
+                <div class="compliance-check"><span class="check-icon">&#10003;</span><span><strong>Audit trail</strong> &mdash; All alerts are stored indefinitely, providing a complete record of detected security events for auditors.</span></div>
+                <div class="compliance-check"><span class="check-icon">&#10003;</span><span><strong>Threat intelligence</strong> &mdash; Active matching against 209,000+ known threat indicators.</span></div>
+            </div>
+
+            <div class="compliance-block">
+                <h3>PQ-153 (Cabinet Resolution, March 2024)</h3>
+                <div class="comp-sub">Technical requirements for information security systems in government networks.</div>
+                <div class="compliance-check"><span class="check-icon">&#10003;</span><span><strong>Process monitoring</strong> &mdash; Every running process is recorded with its file hash, parent process, and command line.</span></div>
+                <div class="compliance-check"><span class="check-icon">&#10003;</span><span><strong>Network monitoring</strong> &mdash; All TCP connections are tracked with source/destination IPs and ports.</span></div>
+                <div class="compliance-check"><span class="check-icon">&#10003;</span><span><strong>Threat matching</strong> &mdash; Real-time comparison against government-recognised threat databases.</span></div>
+                <div class="compliance-check"><span class="check-icon">&#10003;</span><span><strong>Data retention</strong> &mdash; Alert records kept indefinitely; raw telemetry retained per documented retention policy.</span></div>
+            </div>
+        </section>
+
+        <!-- ══ SECTION 9: Quick Reference Card ══ -->
+        <section class="help-section" id="quick-reference">
+            <h2>Quick Reference Card <button class="print-btn" id="print-btn">Print</button></h2>
+
+            <div class="quick-ref">
+                <div class="quick-ref-grid">
+                    <div>
+                        <h3>Severity Quick Guide</h3>
+                        <div class="quick-ref-item">
+                            <span style="color:var(--critical)">&#9679;</span> <strong>CRITICAL</strong> &mdash; Act immediately. Isolate the computer.<br>
+                            <span style="color:var(--high)">&#9679;</span> <strong>HIGH</strong> &mdash; Investigate within the hour.<br>
+                            <span style="color:var(--medium)">&#9679;</span> <strong>MEDIUM</strong> &mdash; Review at next check-in.<br>
+                            <span style="color:var(--low)">&#9679;</span> <strong>LOW</strong> &mdash; No immediate action needed.
+                        </div>
+
+                        <h3 style="margin-top:20px">Data Retention</h3>
+                        <div class="quick-ref-item">
+                            Raw telemetry: <span class="mono">48 hours</span><br>
+                            Process/network events: <span class="mono">7 days</span><br>
+                            Detection events: <span class="mono">30 days</span><br>
+                            Alerts: <span class="mono">Kept forever</span><br>
+                            TI records: <span class="mono">Kept forever</span>
+                        </div>
+                    </div>
+                    <div>
+                        <h3>Key Contacts</h3>
+                        <div class="quick-ref-item">
+                            CERT.uz: <a href="https://cert.uz">cert.uz</a> (national incident response)<br>
+                            Internal: [Your IT security contact here]
+                        </div>
+
+                        <h3 style="margin-top:20px">Useful Pages</h3>
+                        <div class="quick-ref-item">
+                            Dashboard: <a href="{% url 'dashboard' %}" class="mono">/dashboard/</a><br>
+                            Alerts: <a href="{% url 'alerts' %}" class="mono">/alerts/</a><br>
+                            IoC Manager: <a href="{% url 'ioc_manager' %}" class="mono">/ioc-manager/</a><br>
+                            This page: <a href="{% url 'help_center' %}" class="mono">/help/</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// ── TOC active state via IntersectionObserver ──
+(function() {
+    var sections = document.querySelectorAll('.help-section');
+    var tocItems = document.querySelectorAll('.help-toc-item');
+
+    var observer = new IntersectionObserver(function(entries) {
+        entries.forEach(function(entry) {
+            if (entry.isIntersecting) {
+                var id = entry.target.id;
+                tocItems.forEach(function(item) {
+                    if (item.getAttribute('href') === '#' + id) {
+                        item.classList.add('active');
+                    } else {
+                        item.classList.remove('active');
+                    }
+                });
+            }
+        });
+    }, { rootMargin: '-80px 0px -60% 0px', threshold: 0 });
+
+    sections.forEach(function(section) {
+        observer.observe(section);
+    });
+
+    // Smooth scroll on TOC click
+    tocItems.forEach(function(item) {
+        item.addEventListener('click', function(e) {
+            e.preventDefault();
+            var target = document.querySelector(this.getAttribute('href'));
+            if (target) {
+                target.scrollIntoView({ behavior: 'smooth' });
+            }
+        });
+    });
+})();
+
+// ── Print button ──
+document.getElementById('print-btn').addEventListener('click', function() {
+    window.print();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,456 @@
+{% extends 'edr_app/base.html' %}
+
+{% block title %}Process Tree — {{ client.hostname }} — SentinelUZ{% endblock %}
+
+{% block extra_css %}
+    .tree-header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+    }
+    .tree-header .back-link {
+        font-size: var(--text-sm);
+        color: var(--text-secondary);
+    }
+    .tree-header .back-link:hover { color: var(--accent); }
+    .tree-stats {
+        display: flex;
+        gap: 16px;
+        font-size: var(--text-sm);
+        margin-left: auto;
+    }
+    .tree-stats .stat { color: var(--text-muted); }
+    .tree-stats .stat strong { color: var(--text-primary); }
+    .tree-stats .stat.warn strong { color: var(--lolbin); }
+    .tree-stats .stat.crit strong { color: var(--critical); }
+
+    .controls-row {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+    }
+    .search-input {
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-default);
+        border-radius: 4px;
+        padding: 8px 12px;
+        color: var(--text-primary);
+        font-family: var(--font-ui);
+        font-size: var(--text-sm);
+        width: 260px;
+    }
+    .search-input:focus { outline: none; border-color: var(--accent); }
+    .search-input::placeholder { color: var(--text-muted); }
+    .toggle-label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-family: var(--font-ui);
+        font-size: var(--text-sm);
+        color: var(--text-secondary);
+        cursor: pointer;
+        white-space: nowrap;
+    }
+    .toggle-label input { accent-color: var(--accent); }
+
+    /* ── Tree structure ── */
+    .tree-node {
+        display: flex;
+        align-items: flex-start;
+        min-height: 32px;
+        padding: 2px 0;
+        position: relative;
+    }
+    .tree-indent {
+        position: relative;
+        flex-shrink: 0;
+        min-height: 32px;
+    }
+    .tree-guide {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 1px;
+        background: transparent;
+    }
+    .tree-guide.active {
+        background: var(--border-default);
+    }
+    .tree-connector {
+        position: absolute;
+        right: 0;
+        width: 12px;
+        height: 16px;
+        top: 0;
+    }
+    .tree-connector::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 15px;
+        width: 12px;
+        height: 1px;
+        background: var(--border-default);
+    }
+    .tree-connector.is-mid::after {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1px;
+        height: 100%;
+        background: var(--border-default);
+    }
+    .tree-connector.is-last::after {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1px;
+        height: 16px;
+        background: var(--border-default);
+    }
+    .tree-content {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px;
+        padding: 4px 8px;
+        border-radius: 4px;
+        flex: 1;
+        min-height: 28px;
+        transition: background 0.1s;
+    }
+    .tree-content:hover {
+        background: var(--bg-elevated);
+    }
+    .tree-node[data-suspicious="true"] .tree-content {
+        background: var(--critical-bg);
+        border-left: 2px solid var(--critical);
+    }
+    .tree-node[data-suspicious="true"] .tree-content:hover {
+        background: #3a1a1a;
+    }
+    .tree-node[data-lolbin="true"]:not([data-suspicious="true"]) .tree-content {
+        background: var(--lolbin-bg);
+        border-left: 2px solid var(--lolbin);
+    }
+    .tree-node[data-lolbin="true"]:not([data-suspicious="true"]) .tree-content:hover {
+        background: #3a2a10;
+    }
+    .tree-name {
+        font-family: var(--font-ui);
+        font-size: var(--text-sm);
+        font-weight: 500;
+        color: var(--text-primary);
+    }
+    .tree-name.lolbin { color: var(--lolbin); }
+    .tree-name.suspicious { color: var(--critical); }
+    .tree-pid {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--text-muted);
+    }
+    .tree-path {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--text-muted);
+        width: 100%;
+        padding-left: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 500px;
+    }
+    .badge-lolbin {
+        background: var(--lolbin-bg);
+        color: var(--lolbin);
+        border: 1px solid var(--high-border);
+        font-family: var(--font-ui);
+        font-size: var(--text-xs);
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        padding: 1px 6px;
+        border-radius: 3px;
+        text-transform: uppercase;
+    }
+    .badge-suspicious {
+        background: var(--critical-bg);
+        color: var(--critical);
+        border: 1px solid var(--critical-border);
+        font-family: var(--font-ui);
+        font-size: var(--text-xs);
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        padding: 1px 6px;
+        border-radius: 3px;
+        text-transform: uppercase;
+    }
+{% endblock %}
+
+{% block content %}
+<div class="tree-header">
+    <a href="{% url 'processes' %}" class="back-link">&larr; Back to Processes</a>
+    <h1 class="page-header" style="margin-bottom:0">
+        <span class="mono">{{ client.hostname }}</span>
+    </h1>
+    <span style="font-size:var(--text-sm);color:var(--text-muted)">
+        <span class="mono">{{ client.ip_address }}</span>
+    </span>
+    <div class="tree-stats">
+        <span class="stat"><strong>{{ process_count }}</strong> processes</span>
+        <span class="stat warn"><strong>{{ lolbin_count }}</strong> LOLBins</span>
+        <span class="stat crit"><strong>{{ suspicious_count }}</strong> suspicious chains</span>
+    </div>
+</div>
+
+<div class="controls-row">
+    <input type="search" id="search-box" placeholder="Search processes..." class="search-input">
+    <label class="toggle-label">
+        <input type="checkbox" id="hide-system">
+        Hide system (PID &lt; 1000)
+    </label>
+    <label class="toggle-label">
+        <input type="checkbox" id="show-suspicious">
+        Show threats only
+    </label>
+</div>
+
+<div id="perf-indicator"
+     style="font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-bottom: 8px;">
+    Loading...
+</div>
+
+<div class="card">
+    <div class="card-body" style="padding:16px 20px;overflow-x:auto">
+        <div id="tree-container"></div>
+        <div id="tree-empty" class="empty-state" style="display:none">No processes match the current filter.</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const PROCESSES = {{ processes_json|safe }};
+
+function buildTree(processes) {
+    const map = {};
+    const roots = [];
+    processes.forEach(p => {
+        map[p.pid] = { ...p, children: [] };
+    });
+    processes.forEach(p => {
+        if (p.parent_pid && map[p.parent_pid]) {
+            map[p.parent_pid].children.push(map[p.pid]);
+        } else {
+            roots.push(map[p.pid]);
+        }
+    });
+    return roots;
+}
+
+function renderNode(node, depth, isLast, parentLines) {
+    const div = document.createElement('div');
+    div.className = 'tree-node';
+    div.dataset.pid = node.pid;
+    div.dataset.name = node.name.toLowerCase();
+    div.dataset.lolbin = node.is_lolbin;
+    div.dataset.suspicious = node.is_suspicious_chain;
+
+    // Indent with guide lines
+    const indent = document.createElement('div');
+    indent.className = 'tree-indent';
+    indent.style.width = (depth * 20 + 16) + 'px';
+
+    parentLines.forEach((hasLine, i) => {
+        const guide = document.createElement('div');
+        guide.className = 'tree-guide' + (hasLine ? ' active' : '');
+        guide.style.left = (i * 20 + 8) + 'px';
+        indent.appendChild(guide);
+    });
+
+    if (depth > 0) {
+        const connector = document.createElement('div');
+        connector.className = 'tree-connector ' + (isLast ? 'is-last' : 'is-mid');
+        connector.style.left = ((depth - 1) * 20 + 8) + 'px';
+        indent.appendChild(connector);
+    }
+
+    // Content
+    const content = document.createElement('div');
+    content.className = 'tree-content';
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'tree-name' + (node.is_suspicious_chain ? ' suspicious' : node.is_lolbin ? ' lolbin' : '');
+    nameSpan.textContent = node.name;
+    content.appendChild(nameSpan);
+
+    const pidSpan = document.createElement('span');
+    pidSpan.className = 'tree-pid';
+    pidSpan.textContent = 'PID: ' + node.pid;
+    content.appendChild(pidSpan);
+
+    if (node.is_suspicious_chain) {
+        const badge = document.createElement('span');
+        badge.className = 'badge-suspicious';
+        badge.textContent = 'SUSPICIOUS';
+        content.appendChild(badge);
+    } else if (node.is_lolbin) {
+        const badge = document.createElement('span');
+        badge.className = 'badge-lolbin';
+        badge.textContent = 'LOLBIN';
+        content.appendChild(badge);
+    }
+
+    if (node.sha256_hash && node.sha256_hash !== 'TOO_LARGE') {
+        const hash = document.createElement('span');
+        hash.className = 'hash';
+        hash.textContent = node.sha256_hash.substring(0, 16) + '...';
+        hash.title = node.sha256_hash;
+        hash.onclick = function() { copyHash(node.sha256_hash); };
+        content.appendChild(hash);
+    }
+
+    if (node.path) {
+        const path = document.createElement('div');
+        path.className = 'tree-path';
+        path.textContent = node.path;
+        path.title = node.path;
+        content.appendChild(path);
+    }
+
+    div.appendChild(indent);
+    div.appendChild(content);
+    return div;
+}
+
+function flattenTree(nodes, depth, parentLines) {
+    depth = depth || 0;
+    parentLines = parentLines || [];
+    const result = [];
+    nodes.forEach(function(node, i) {
+        const isLast = i === nodes.length - 1;
+        result.push({ node: node, depth: depth, isLast: isLast, parentLines: parentLines.slice() });
+        if (node.children.length > 0) {
+            const childLines = parentLines.concat([!isLast]);
+            result.push.apply(result, flattenTree(node.children, depth + 1, childLines));
+        }
+    });
+    return result;
+}
+
+function renderTreeFast(tree) {
+    const container = document.getElementById('tree-container');
+    container.innerHTML = '';
+    const flat = flattenTree(tree);
+
+    // First batch: render immediately
+    const firstBatch = flat.splice(0, 80);
+    const fragment = document.createDocumentFragment();
+    firstBatch.forEach(function(item) {
+        fragment.appendChild(renderNode(item.node, item.depth, item.isLast, item.parentLines));
+    });
+    container.appendChild(fragment);
+
+    // Remaining: render after first paint
+    if (flat.length > 0) {
+        requestAnimationFrame(function() {
+            const rest = document.createDocumentFragment();
+            flat.forEach(function(item) {
+                rest.appendChild(renderNode(item.node, item.depth, item.isLast, item.parentLines));
+            });
+            container.appendChild(rest);
+        });
+    }
+}
+
+// ── Performance instrumentation ──
+window.onerror = function(msg, src, line) {
+    console.error('[SentinelUZ Error] ' + msg + ' at line ' + line);
+};
+
+var PERF_START = performance.now();
+console.log('[SentinelUZ] JSON data: ' + PROCESSES.length + ' processes, ~' + Math.round(JSON.stringify(PROCESSES).length / 1024) + ' KB');
+
+var T0 = performance.now();
+var tree = buildTree(PROCESSES);
+var T1 = performance.now();
+console.log('[SentinelUZ] buildTree(): ' + (T1 - T0).toFixed(1) + 'ms');
+
+(function() {
+    var container = document.getElementById('tree-container');
+    container.innerHTML = '';
+    var flat = flattenTree(tree);
+    var T2 = performance.now();
+    console.log('[SentinelUZ] flattenTree(): ' + (T2 - T1).toFixed(1) + 'ms, ' + flat.length + ' nodes');
+
+    var firstBatch = flat.splice(0, 80);
+    var fragment = document.createDocumentFragment();
+    firstBatch.forEach(function(item) {
+        fragment.appendChild(renderNode(item.node, item.depth, item.isLast, item.parentLines));
+    });
+    container.appendChild(fragment);
+    var T3 = performance.now();
+    console.log('[SentinelUZ] First 80 nodes DOM: ' + (T3 - T2).toFixed(1) + 'ms');
+
+    var perfEl = document.getElementById('perf-indicator');
+
+    if (flat.length > 0) {
+        var remaining = flat.length;
+        requestAnimationFrame(function() {
+            var T4 = performance.now();
+            var rest = document.createDocumentFragment();
+            flat.forEach(function(item) {
+                rest.appendChild(renderNode(item.node, item.depth, item.isLast, item.parentLines));
+            });
+            var T5 = performance.now();
+            console.log('[SentinelUZ] Rest fragment build (' + remaining + ' nodes): ' + (T5 - T4).toFixed(1) + 'ms');
+            container.appendChild(rest);
+            var T6 = performance.now();
+            console.log('[SentinelUZ] Rest DOM insert: ' + (T6 - T5).toFixed(1) + 'ms');
+            console.log('[SentinelUZ] TOTAL render: ' + (T6 - PERF_START).toFixed(1) + 'ms');
+            perfEl.textContent = 'Rendered ' + (80 + remaining) + ' processes in ' + (T6 - PERF_START).toFixed(0) + 'ms';
+        });
+    } else {
+        var total = performance.now() - PERF_START;
+        perfEl.textContent = 'Rendered 80 processes in ' + total.toFixed(0) + 'ms';
+    }
+})();
+
+// Filters
+document.getElementById('search-box').addEventListener('input', applyFilters);
+document.getElementById('hide-system').addEventListener('change', applyFilters);
+document.getElementById('show-suspicious').addEventListener('change', applyFilters);
+
+function applyFilters() {
+    const q = document.getElementById('search-box').value.toLowerCase();
+    const hideSystem = document.getElementById('hide-system').checked;
+    const threatsOnly = document.getElementById('show-suspicious').checked;
+    var visible = 0;
+
+    document.querySelectorAll('.tree-node').forEach(function(node) {
+        const name = node.dataset.name || '';
+        const pid = parseInt(node.dataset.pid);
+        const isLolbin = node.dataset.lolbin === 'true';
+        const isSuspicious = node.dataset.suspicious === 'true';
+
+        var show = true;
+        if (q && !name.includes(q)) show = false;
+        if (hideSystem && pid < 1000) show = false;
+        if (threatsOnly && !isLolbin && !isSuspicious) show = false;
+
+        node.style.display = show ? '' : 'none';
+        if (show) visible++;
+    });
+
+    document.getElementById('tree-empty').style.display = visible === 0 ? '' : 'none';
+}
+</script>
+{% endblock %}
