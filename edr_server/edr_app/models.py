@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils import timezone
 import threading
 import uuid
 
@@ -88,6 +89,10 @@ class Port(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True)
     service_name = models.CharField(max_length=100, blank=True, null=True)
     service_version = models.CharField(max_length=50, blank=True, null=True)
+    local_ip = models.GenericIPAddressField(null=True, blank=True)
+    local_port = models.IntegerField(null=True, blank=True)
+    remote_ip = models.GenericIPAddressField(null=True, blank=True)
+    remote_port = models.IntegerField(null=True, blank=True)
 
     def __str__(self):
         return f"{self.protocol}:{self.port_number} ({self.state})"
@@ -107,9 +112,55 @@ class SuspiciousActivity(models.Model):
     )
     ioc_matched = models.CharField(max_length=255, blank=True, null=True)
     score = models.IntegerField(default=0)
+    event_count = models.IntegerField(default=1)
+    last_seen = models.DateTimeField(auto_now=True)
+    events = models.ManyToManyField('Event', blank=True, related_name='alerts')
+    correlation_id = models.CharField(max_length=64, blank=True, null=True, db_index=True,
+                                      help_text='Groups related alerts from same attack chain')
+
+    ALERT_STATUS = [
+        ('open',           'Open'),
+        ('acknowledged',   'Acknowledged'),
+        ('false_positive', 'False Positive'),
+        ('in_incident',    'In Incident'),
+        ('closed',         'Closed'),
+    ]
+    status = models.CharField(max_length=20, choices=ALERT_STATUS, default='open', db_index=True)
+    false_positive_reason = models.TextField(blank=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    assigned_to = models.ForeignKey(
+        'auth.User', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='assigned_alerts')
+
+    class Meta:
+        ordering = ['-last_seen']
+        indexes = [
+            models.Index(fields=['client', 'ioc_matched', 'type']),
+            models.Index(fields=['severity', 'last_seen'], name='alert_sev_ts_idx'),
+            models.Index(fields=['client', 'last_seen'], name='alert_client_ts_idx'),
+            models.Index(fields=['last_seen'], name='alert_ts_idx'),
+            models.Index(fields=['status'], name='alert_status_idx'),
+        ]
 
     def __str__(self):
         return f"{self.type} - {self.description[:50]}"
+
+    @property
+    def is_acknowledged(self):
+        return self.status in ('acknowledged', 'in_incident', 'false_positive', 'closed')
+
+    def can_mark_false_positive(self):
+        if hasattr(self, 'incidents') and self.incidents.exists():
+            refs = ', '.join(i.reference for i in self.incidents.all()[:3])
+            return False, f"Alert is linked to {refs}. Remove it from the incident before marking as false positive."
+        return True, ""
+
+    def can_delete(self):
+        if self.status in ('open', 'acknowledged'):
+            return False
+        if hasattr(self, 'incidents') and self.incidents.exists():
+            return False
+        return True
 
 class Vulnerability(models.Model):
     SEVERITY_CHOICES = [
@@ -232,3 +283,143 @@ class ThreatIntelHash(models.Model):
 
     def __str__(self):
         return f"{self.sha256_hash[:16]}... ({self.malware_name})"
+
+
+class ExclusionRule(models.Model):
+    MATCH_MODES = [
+        ('NAME_ONLY', 'Name Only'),
+        ('NAME_AND_PATH', 'Name + Path'),
+        ('HASH_ONLY', 'SHA256 Hash Only'),
+        ('ALL', 'Name + Path + Hash'),
+    ]
+
+    process_name = models.CharField(
+        max_length=255, blank=True,
+        help_text='e.g. explorer.exe'
+    )
+    process_path = models.CharField(
+        max_length=500, blank=True,
+        help_text='e.g. C:\\Windows\\System32\\'
+    )
+    sha256_hash = models.CharField(
+        max_length=64, blank=True,
+        help_text='Full SHA256 hex string'
+    )
+    match_mode = models.CharField(
+        max_length=20,
+        choices=MATCH_MODES,
+        default='NAME_AND_PATH'
+    )
+    reason = models.TextField(
+        blank=True,
+        help_text='Why this process is excluded'
+    )
+    added_by = models.ForeignKey(
+        'auth.User',
+        on_delete=models.SET_NULL,
+        null=True, blank=True
+    )
+    expires_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text='Leave blank for permanent exclusion'
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['process_name', 'is_active']),
+            models.Index(fields=['sha256_hash', 'is_active']),
+        ]
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.process_name} ({self.match_mode})'
+
+    def is_expired(self):
+        if self.expires_at:
+            return timezone.now() > self.expires_at
+        return False
+
+
+class Event(models.Model):
+    EVENT_TYPES = [
+        ('PROCESS_START',        'Process Started'),
+        ('NETWORK_CONNECT',      'Network Connection'),
+        ('HASH_MATCH',           'Malware Hash Detected'),
+        ('IP_MATCH',             'Blacklisted IP Connection'),
+        ('LOLBIN_CHAIN',         'LOLBin Process Chain'),
+        ('RANSOMWARE_PRECURSOR', 'Ransomware Precursor Tool'),
+    ]
+
+    client     = models.ForeignKey('Client', on_delete=models.CASCADE, related_name='events')
+    event_type = models.CharField(max_length=30, choices=EVENT_TYPES, db_index=True)
+    process    = models.ForeignKey('Process', null=True, blank=True, on_delete=models.SET_NULL, related_name='events')
+    port       = models.ForeignKey('Port', null=True, blank=True, on_delete=models.SET_NULL, related_name='events')
+    timestamp  = models.DateTimeField(auto_now_add=True, db_index=True)
+    raw_data   = models.TextField(default='{}', help_text='JSON-encoded event data')
+
+    class Meta:
+        ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['event_type', 'timestamp'], name='event_type_ts_idx'),
+            models.Index(fields=['client', 'timestamp'], name='event_client_ts_idx'),
+            models.Index(fields=['timestamp'], name='event_ts_idx'),
+        ]
+
+    def __str__(self):
+        return f"{self.event_type} on {self.client.hostname} at {self.timestamp:%Y-%m-%d %H:%M:%S}"
+
+    @property
+    def display_name(self):
+        return dict(self.EVENT_TYPES).get(self.event_type, self.event_type)
+
+
+class Signature(models.Model):
+
+    MITRE_TACTICS = [
+        ('execution',        'Execution'),
+        ('defense_evasion',  'Defense Evasion'),
+        ('command_control',  'Command and Control'),
+        ('discovery',        'Discovery'),
+        ('lateral_movement', 'Lateral Movement'),
+        ('impact',           'Impact'),
+        ('persistence',      'Persistence'),
+    ]
+
+    SEVERITY_LEVELS = [
+        ('LOW',      'Low'),
+        ('MEDIUM',   'Medium'),
+        ('HIGH',     'High'),
+        ('CRITICAL', 'Critical'),
+    ]
+
+    alert = models.ForeignKey(
+        'SuspiciousActivity', on_delete=models.CASCADE,
+        related_name='signatures', null=True, blank=True)
+    events = models.ManyToManyField(
+        'Event', related_name='signatures', blank=True)
+    sig_id = models.CharField(max_length=20, default='SIG-000')
+    name = models.CharField(max_length=200)
+    plain_title = models.CharField(max_length=200)
+    plain_explanation = models.TextField()
+    plain_action = models.TextField()
+    mitre_id = models.CharField(max_length=20, blank=True)
+    mitre_tactic = models.CharField(
+        max_length=30, choices=MITRE_TACTICS, blank=True)
+    severity = models.CharField(
+        max_length=10, choices=SEVERITY_LEVELS, default='LOW')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.sig_id}: {self.plain_title}"
+
+    @property
+    def mitre_url(self):
+        if self.mitre_id:
+            base = self.mitre_id.replace('.', '/')
+            return f"https://attack.mitre.org/techniques/{base}/"
+        return ""

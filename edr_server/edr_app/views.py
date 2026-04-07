@@ -16,7 +16,7 @@ import json
 from .models import (
     Client, Process, Port, SuspiciousActivity, Vulnerability,
     VulnerabilityMatch, Log, WindowsEventLog,
-    ThreatIntelIP, ThreatIntelHash, ExclusionRule,
+    ThreatIntelIP, ThreatIntelHash, ExclusionRule, Event, Signature,
 )
 from .serializers import (
     ClientSerializer, ProcessSerializer, PortSerializer,
@@ -57,21 +57,127 @@ def home(request):
 
 @login_required
 def dashboard(request):
-    # Get all clients
-    all_clients = Client.objects.all()
-    
-    # Set the threshold for active devices (5 minutes)
-    five_minutes_ago = timezone.now() - timedelta(minutes=5)
-    
-    # Filter active and inactive clients
-    active_clients = Client.objects.filter(last_seen__gte=five_minutes_ago)
-    inactive_clients = Client.objects.filter(last_seen__lt=five_minutes_ago)
-    
+    from django.db.models import Count, Q, Max
+
+    now = timezone.now()
+    two_min_ago = now - timedelta(minutes=2)
+    twenty_four_h_ago = now - timedelta(hours=24)
+
+    total_endpoints = Client.objects.count()
+    active_endpoints = Client.objects.filter(last_seen__gte=two_min_ago).count()
+    critical_alerts = SuspiciousActivity.objects.filter(
+        severity='CRITICAL', status='open').count()
+    alerts_24h = SuspiciousActivity.objects.filter(
+        timestamp__gte=twenty_four_h_ago).count()
+    ti_total = (ThreatIntelIP.objects.filter(is_active=True).count() +
+                ThreatIntelHash.objects.filter(is_active=True).count())
+
+    endpoints = Client.objects.annotate(
+        process_count=Count('processes', distinct=True),
+        critical_count=Count('activities', filter=Q(
+            activities__severity='CRITICAL',
+            activities__status='open'), distinct=True),
+        alert_count=Count('activities', filter=Q(
+            activities__status='open'), distinct=True),
+    ).order_by('-last_seen')
+
+    recent_alerts = SuspiciousActivity.objects.select_related(
+        'client').order_by('-last_seen')[:5]
+
+    severity_qs = SuspiciousActivity.objects.filter(
+        status='open').values('severity').annotate(count=Count('id'))
+    severity_counts = {'CRITICAL': 0, 'HIGH': 0, 'MEDIUM': 0, 'LOW': 0}
+    for row in severity_qs:
+        severity_counts[row['severity']] = row['count']
+
+    last_checkin = Client.objects.aggregate(last=Max('last_seen'))['last']
+
     context = {
-        'active_clients': active_clients,
-        'inactive_clients': inactive_clients,
+        'active_endpoints': active_endpoints,
+        'total_endpoints': total_endpoints,
+        'critical_alerts': critical_alerts,
+        'alerts_24h': alerts_24h,
+        'ti_total': ti_total,
+        'endpoints': endpoints,
+        'recent_alerts': recent_alerts,
+        'severity_counts': severity_counts,
+        'last_checkin': last_checkin,
+        'two_min_ago': two_min_ago,
     }
     return render(request, 'edr_app/dashboard.html', context)
+
+
+@login_required
+def dashboard_stats_api(request):
+    from django.db.models import Count, Q, Max
+
+    now = timezone.now()
+    two_min_ago = now - timedelta(minutes=2)
+    twenty_four_h_ago = now - timedelta(hours=24)
+
+    active_endpoints = Client.objects.filter(last_seen__gte=two_min_ago).count()
+    total_endpoints = Client.objects.count()
+    critical_alerts = SuspiciousActivity.objects.filter(
+        severity='CRITICAL', status='open').count()
+    alerts_24h = SuspiciousActivity.objects.filter(
+        timestamp__gte=twenty_four_h_ago).count()
+    ti_total = (ThreatIntelIP.objects.filter(is_active=True).count() +
+                ThreatIntelHash.objects.filter(is_active=True).count())
+
+    endpoints_qs = Client.objects.annotate(
+        process_count=Count('processes', distinct=True),
+        critical_count=Count('activities', filter=Q(
+            activities__severity='CRITICAL',
+            activities__status='open'), distinct=True),
+        alert_count=Count('activities', filter=Q(
+            activities__status='open'), distinct=True),
+    ).order_by('-last_seen')
+
+    endpoints_data = []
+    for ep in endpoints_qs:
+        endpoints_data.append({
+            'id': ep.id,
+            'hostname': ep.hostname,
+            'ip_address': ep.ip_address,
+            'is_online': ep.last_seen >= two_min_ago if ep.last_seen else False,
+            'last_seen': ep.last_seen.isoformat() if ep.last_seen else None,
+            'process_count': ep.process_count,
+            'critical_count': ep.critical_count,
+            'alert_count': ep.alert_count,
+        })
+
+    recent = []
+    for a in SuspiciousActivity.objects.select_related('client').order_by('-last_seen')[:5]:
+        recent.append({
+            'id': a.id,
+            'type': a.type,
+            'severity': a.severity,
+            'hostname': a.client.hostname,
+            'ioc_matched': a.ioc_matched or '',
+            'event_count': a.event_count,
+            'last_seen': a.last_seen.isoformat() if a.last_seen else None,
+        })
+
+    severity_qs = SuspiciousActivity.objects.filter(
+        status='open').values('severity').annotate(count=Count('id'))
+    severity_counts = {'CRITICAL': 0, 'HIGH': 0, 'MEDIUM': 0, 'LOW': 0}
+    for row in severity_qs:
+        severity_counts[row['severity']] = row['count']
+
+    last_checkin = Client.objects.aggregate(last=Max('last_seen'))['last']
+
+    return JsonResponse({
+        'active_endpoints': active_endpoints,
+        'total_endpoints': total_endpoints,
+        'critical_alerts': critical_alerts,
+        'alerts_24h': alerts_24h,
+        'ti_total': ti_total,
+        'endpoints': endpoints_data,
+        'recent_alerts': recent,
+        'severity_counts': severity_counts,
+        'last_checkin': last_checkin.isoformat() if last_checkin else None,
+    })
+
 
 @login_required
 def device_detail(request, device_id):
@@ -309,8 +415,8 @@ def alert_acknowledge(request, alert_id):
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=405)
     alert = get_object_or_404(SuspiciousActivity, id=alert_id)
-    alert.is_acknowledged = True
-    alert.save(update_fields=['is_acknowledged'])
+    alert.status = 'acknowledged'
+    alert.save(update_fields=['status'])
     return JsonResponse({'status': 'ok'})
 
 @login_required
@@ -1076,9 +1182,22 @@ def ioc_manager(request):
         ioc_matched=''
     ).select_related('client').order_by('-last_seen')[:20]
 
-    exclusion_rules = ExclusionRule.objects.select_related(
-        'added_by'
-    ).order_by('-created_at')
+    exclusion_rules = ExclusionRule.objects.filter(
+        is_active=True
+    ).select_related('added_by').order_by('-created_at')
+
+    exclusion_count = exclusion_rules.count()
+
+    last_sync = ThreatIntelIP.objects.order_by('-added_date').values_list(
+        'added_date', flat=True
+    ).first()
+    last_sync_hash = ThreatIntelHash.objects.order_by('-added_date').values_list(
+        'added_date', flat=True
+    ).first()
+    if last_sync_hash and (not last_sync or last_sync_hash > last_sync):
+        last_sync = last_sync_hash
+
+    has_name_only = exclusion_rules.filter(match_mode='NAME_ONLY').exists()
 
     context = {
         'ip_stats': ip_stats,
@@ -1088,6 +1207,9 @@ def ioc_manager(request):
         'total_ti': ip_total + hash_total,
         'recent_detections': recent_detections,
         'exclusion_rules': exclusion_rules,
+        'exclusion_count': exclusion_count,
+        'last_sync': last_sync,
+        'has_name_only': has_name_only,
     }
     return render(request, 'edr_app/ioc_manager.html', context)
 
@@ -1180,3 +1302,268 @@ def exclusion_delete(request, rule_id):
     rule = get_object_or_404(ExclusionRule, id=rule_id)
     rule.delete()
     return JsonResponse({'status': 'ok'})
+
+
+@login_required
+def help_center(request):
+    return render(request, 'edr_app/help_center.html')
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def alert_signatures(request, alert_id):
+    """Return signatures for an alert grouped by tactic."""
+    alert = get_object_or_404(SuspiciousActivity, id=alert_id)
+    signatures = alert.signatures.all().prefetch_related('events')
+
+    tactic_order = [
+        'execution', 'defense_evasion', 'command_control',
+        'impact', 'persistence', 'discovery', 'lateral_movement',
+    ]
+    grouped = {}
+    for sig in signatures:
+        tactic = sig.mitre_tactic or 'other'
+        if tactic not in grouped:
+            grouped[tactic] = []
+        grouped[tactic].append({
+            'id': sig.id,
+            'sig_id': sig.sig_id,
+            'plain_title': sig.plain_title,
+            'plain_explanation': sig.plain_explanation,
+            'plain_action': sig.plain_action,
+            'mitre_id': sig.mitre_id,
+            'mitre_tactic': sig.mitre_tactic,
+            'mitre_url': sig.mitre_url,
+            'severity': sig.severity,
+            'event_count': sig.events.count(),
+        })
+
+    result = []
+    for tactic in tactic_order:
+        if tactic in grouped:
+            result.append({
+                'tactic': tactic,
+                'tactic_display': tactic.replace('_', ' ').title(),
+                'signatures': grouped[tactic],
+            })
+    for tactic, sigs in grouped.items():
+        if tactic not in tactic_order:
+            result.append({
+                'tactic': tactic,
+                'tactic_display': tactic.replace('_', ' ').title(),
+                'signatures': sigs,
+            })
+
+    return Response({
+        'alert_id': alert_id,
+        'tactic_count': len(result),
+        'sig_count': signatures.count(),
+        'tactics': result,
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def signature_events(request, sig_id):
+    """Return events for a specific signature."""
+    sig = get_object_or_404(Signature, id=sig_id)
+    events = sig.events.all().order_by('timestamp')
+
+    data = []
+    for evt in events:
+        raw = {}
+        try:
+            raw = json.loads(evt.raw_data) if isinstance(evt.raw_data, str) else (evt.raw_data or {})
+        except (json.JSONDecodeError, TypeError):
+            pass
+        data.append({
+            'id': evt.id,
+            'event_type': evt.event_type,
+            'event_type_display': evt.display_name,
+            'timestamp': evt.timestamp.isoformat() if evt.timestamp else None,
+            'raw_data': raw,
+            'summary': _event_summary(evt, raw),
+        })
+
+    return Response({
+        'sig_id': sig.id,
+        'plain_title': sig.plain_title,
+        'mitre_id': sig.mitre_id,
+        'events': data,
+    })
+
+
+def _event_summary(event, raw):
+    """One-line plain English summary of an event."""
+    if event.event_type == 'PROCESS_START':
+        return f"Process created: {raw.get('name', 'unknown')} (PID {raw.get('pid', '?')})"
+    elif event.event_type == 'NETWORK_CONNECT':
+        return f"Network connection: {raw.get('remote_ip', '?')}:{raw.get('remote_port', '?')}"
+    elif event.event_type == 'HASH_MATCH':
+        return f"Malware hash matched: {raw.get('name', raw.get('process_name', 'unknown'))}"
+    elif event.event_type == 'IP_MATCH':
+        return f"Blacklisted IP: {raw.get('remote_ip', '?')}"
+    elif event.event_type == 'LOLBIN_CHAIN':
+        return f"LOLBin chain: {raw.get('chain', 'unknown chain')}"
+    elif event.event_type == 'RANSOMWARE_PRECURSOR':
+        return f"Ransomware tool: {raw.get('name', raw.get('process_name', 'unknown'))}"
+    return event.display_name
+
+
+@login_required
+def endpoint_events(request):
+    """Endpoint events feed page."""
+    clients = Client.objects.all().order_by('hostname')
+    return render(request, 'edr_app/endpoint_events.html', {'clients': clients})
+
+
+@login_required
+def endpoint_events_api(request):
+    """Returns paginated Event records for the events feed."""
+    import csv as csv_mod
+    from .query_parser import apply_query
+
+    query_str = request.GET.get('query', '').strip()
+    date_from = request.GET.get('date_from', '')
+    date_to = request.GET.get('date_to', '')
+    fmt = request.GET.get('format', 'json')
+    tab = request.GET.get('tab', 'all')
+    event_type = request.GET.get('event_type', '')
+    client_id = request.GET.get('client_id', '')
+    page = int(request.GET.get('page', 1))
+    per_page = 50
+
+    qs = Event.objects.select_related('client', 'process', 'port')
+
+    # Date range: explicit dates win over hours
+    if date_from or date_to:
+        if date_from:
+            qs = qs.filter(timestamp__gte=date_from + 'T00:00:00Z')
+        if date_to:
+            qs = qs.filter(timestamp__lte=date_to + 'T23:59:59Z')
+    else:
+        hours = int(request.GET.get('hours', 24))
+        cutoff = timezone.now() - timedelta(hours=hours)
+        qs = qs.filter(timestamp__gte=cutoff)
+
+    if query_str:
+        qs, _ = apply_query(qs, query_str, mode='events')
+
+    if tab == 'alerts':
+        qs = qs.filter(alerts__severity__in=['HIGH', 'CRITICAL']).distinct()
+    elif tab == 'suspicious':
+        qs = qs.filter(event_type__in=[
+            'HASH_MATCH', 'IP_MATCH', 'LOLBIN_CHAIN', 'RANSOMWARE_PRECURSOR',
+        ])
+
+    if event_type:
+        qs = qs.filter(event_type=event_type)
+    if client_id:
+        qs = qs.filter(client_id=client_id)
+
+    qs = qs.order_by('-timestamp')
+    total = qs.count()
+
+    # CSV export
+    if fmt == 'csv':
+        response = HttpResponse(content_type='text/csv')
+        filename = f"events_{timezone.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        writer = csv_mod.writer(response)
+        writer.writerow(['Timestamp', 'Event Type', 'Hostname', 'Summary', 'Detail', 'Linked Alert'])
+        for evt in qs[:5000]:
+            raw = {}
+            try:
+                raw = json.loads(evt.raw_data) if isinstance(evt.raw_data, str) else (evt.raw_data or {})
+            except (json.JSONDecodeError, TypeError):
+                pass
+            linked = evt.alerts.filter(severity__in=['HIGH', 'CRITICAL']).first()
+            writer.writerow([
+                evt.timestamp.strftime('%Y-%m-%d %H:%M:%S') if evt.timestamp else '',
+                evt.event_type,
+                evt.client.hostname if evt.client else '',
+                _event_summary(evt, raw),
+                raw.get('path', raw.get('chain', '')),
+                linked.id if linked else '',
+            ])
+        return response
+
+    # JSON pagination
+    start = (page - 1) * per_page
+    events = qs[start:start + per_page]
+
+    data = []
+    for evt in events:
+        raw = {}
+        try:
+            raw = json.loads(evt.raw_data) if isinstance(evt.raw_data, str) else (evt.raw_data or {})
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        badges = []
+        if evt.event_type == 'HASH_MATCH':
+            badges = ['MALWARE']
+        elif evt.event_type == 'IP_MATCH':
+            badges = ['C2']
+        elif evt.event_type == 'LOLBIN_CHAIN':
+            badges = ['LOLBIN', 'CHAIN']
+        elif evt.event_type == 'RANSOMWARE_PRECURSOR':
+            badges = ['RANSOMWARE']
+        elif evt.event_type == 'PROCESS_START':
+            if raw.get('is_lolbin'):
+                badges.append('LOLBIN')
+
+        linked_alert = evt.alerts.filter(severity__in=['HIGH', 'CRITICAL']).first()
+
+        data.append({
+            'id': evt.id,
+            'event_type': evt.event_type,
+            'event_type_display': evt.display_name,
+            'timestamp': evt.timestamp.isoformat() if evt.timestamp else None,
+            'hostname': evt.client.hostname if evt.client else '',
+            'title': _event_summary(evt, raw),
+            'detail': raw.get('path', raw.get('chain', '')),
+            'badges': badges,
+            'raw_data': raw,
+            'linked_alert_id': linked_alert.id if linked_alert else None,
+        })
+
+    # Tab counts (use same base date filter)
+    if date_from or date_to:
+        all_qs = Event.objects.all()
+        if date_from:
+            all_qs = all_qs.filter(timestamp__gte=date_from + 'T00:00:00Z')
+        if date_to:
+            all_qs = all_qs.filter(timestamp__lte=date_to + 'T23:59:59Z')
+    else:
+        hours_val = int(request.GET.get('hours', 24))
+        all_qs = Event.objects.filter(timestamp__gte=timezone.now() - timedelta(hours=hours_val))
+
+    counts = {
+        'all': all_qs.count(),
+        'alerts': all_qs.filter(alerts__severity__in=['HIGH', 'CRITICAL']).distinct().count(),
+        'suspicious': all_qs.filter(event_type__in=[
+            'HASH_MATCH', 'IP_MATCH', 'LOLBIN_CHAIN', 'RANSOMWARE_PRECURSOR',
+        ]).count(),
+    }
+
+    # Volume chart (24h by hour)
+    chart = []
+    now = timezone.now()
+    for i in range(23, -1, -1):
+        hour_start = now - timedelta(hours=i + 1)
+        hour_end = now - timedelta(hours=i)
+        count = Event.objects.filter(
+            timestamp__gte=hour_start, timestamp__lt=hour_end,
+        ).count()
+        chart.append({'hour': hour_end.strftime('%H:%M'), 'count': count})
+
+    return JsonResponse({
+        'events': data,
+        'total': total,
+        'page': page,
+        'per_page': per_page,
+        'has_more': (start + per_page) < total,
+        'tab_counts': counts,
+        'chart': chart,
+    })
