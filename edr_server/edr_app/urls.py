@@ -58,6 +58,10 @@ urlpatterns = [
     path('reports/delete/<int:report_id>/', views.report_delete, name='report_delete'),
     path('reports/compliance/', views.compliance_report, name='compliance_report'),
 
+    # Owner Portal
+    path('owner/company/', views.owner_company, name='owner_company'),
+    path('owner/users/', views.owner_users, name='owner_users'),
+
     # Signatures & Events
     path('api/alerts/<int:alert_id>/signatures/', views.alert_signatures, name='alert_signatures'),
     path('api/signatures/<int:sig_id>/events/', views.signature_events, name='signature_events'),

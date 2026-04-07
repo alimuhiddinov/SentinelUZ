@@ -1,0 +1,165 @@
+{% extends 'edr_app/base.html' %}
+{% block title %}Company — SentinelUZ{% endblock %}
+
+{% block extra_css %}
+.form-label { font-size: var(--text-xs); color: var(--text-muted); display: block; margin-bottom: 4px; }
+.form-input { width: 100%; padding: 8px 10px; border-radius: 4px; border: 1px solid var(--border-default); background: var(--bg-elevated); color: var(--text-primary); font-family: var(--font-ui); font-size: var(--text-sm); }
+.form-input:focus { outline: none; border-color: var(--accent); }
+.data-table { width: 100%; border-collapse: collapse; }
+.data-table th { text-align: left; font-size: var(--text-xs); color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; padding: 8px 12px; border-bottom: 1px solid var(--border-subtle); }
+.data-table td { font-size: var(--text-sm); color: var(--text-primary); padding: 10px 12px; border-bottom: 1px solid var(--border-subtle); }
+.data-table tr:hover td { background: var(--bg-elevated); }
+.btn-secondary { background: var(--bg-elevated); border: 1px solid var(--border-default); border-radius: 4px; padding: 6px 14px; font-family: var(--font-ui); font-size: var(--text-sm); color: var(--text-secondary); cursor: pointer; }
+.btn-secondary:hover { border-color: var(--accent); color: var(--text-primary); }
+{% endblock %}
+
+{% block content %}
+<div style="margin-bottom:20px;">
+    <h1 class="page-header" style="margin-bottom:0;">Company & License</h1>
+</div>
+
+{% if setup_needed %}
+<div class="card" style="padding:32px;text-align:center;">
+    <div style="font-size:36px;margin-bottom:12px;">&#127970;</div>
+    <div style="font-size:var(--text-base);font-weight:600;margin-bottom:8px;">No company configured</div>
+    <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:16px;">Run the setup command to initialise:</div>
+    <div style="font-family:var(--font-mono);font-size:var(--text-xs);background:var(--bg-elevated);padding:10px 16px;border-radius:6px;display:inline-block;">python manage.py setup_company --name "Your Org" --tier professional</div>
+</div>
+{% else %}
+
+{% if warn_expiry %}
+<div style="padding:12px 16px;margin-bottom:16px;background:var(--high-bg);border:1px solid var(--high-border);border-radius:8px;font-size:var(--text-sm);color:var(--high);">
+    &#9888; Active license expires in <strong>{{ active.days_remaining }} days</strong> ({{ active.valid_until }}). Add a new license to avoid service interruption.
+</div>
+{% endif %}
+
+<!-- Company details card -->
+<div class="card" style="margin-bottom:16px;">
+    <div class="card-header"><span>{{ company.name }}</span></div>
+    <div class="card-body">
+        <form method="POST">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="update_company">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+                <div>
+                    <label class="form-label">Company Name</label>
+                    <input type="text" name="name" value="{{ company.name }}" class="form-input">
+                </div>
+                <div>
+                    <label class="form-label">Contact Name</label>
+                    <input type="text" name="contact_name" value="{{ company.contact_name }}" class="form-input">
+                </div>
+                <div>
+                    <label class="form-label">Contact Email</label>
+                    <input type="email" name="contact_email" value="{{ company.contact_email }}" class="form-input">
+                </div>
+                <div>
+                    <label class="form-label">Contact Phone</label>
+                    <input type="text" name="contact_phone" value="{{ company.contact_phone }}" class="form-input">
+                </div>
+            </div>
+            <div style="margin-bottom:12px;">
+                <label class="form-label">Notes</label>
+                <textarea name="notes" class="form-input" style="height:60px;resize:vertical;">{{ company.notes }}</textarea>
+            </div>
+            <button type="submit" class="btn btn-secondary">Save Changes</button>
+        </form>
+    </div>
+</div>
+
+<!-- Endpoint usage card -->
+<div class="card" style="margin-bottom:16px;">
+    <div class="card-header"><span>Endpoint Usage</span></div>
+    <div class="card-body">
+        {% if active %}
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+            <div style="font-size:var(--text-2xl);font-weight:700;font-family:var(--font-mono);">{{ endpoint_count }}</div>
+            <div style="color:var(--text-secondary);font-size:var(--text-sm);">of {{ active.max_endpoints }} endpoints ({{ active.get_tier_display }})</div>
+        </div>
+        <div style="height:8px;background:var(--bg-elevated);border-radius:4px;overflow:hidden;">
+            <div style="height:100%;border-radius:4px;width:{% widthratio endpoint_count active.max_endpoints 100 %}%;background:{% if endpoint_count >= active.max_endpoints %}var(--critical){% else %}var(--accent){% endif %};transition:width 0.3s;"></div>
+        </div>
+        {% else %}
+        <div style="color:var(--text-muted);font-size:var(--text-sm);">No active license — endpoint limit not enforced.</div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- License history + add new -->
+<div class="card">
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>License History</span>
+        <button onclick="document.getElementById('addLicForm').style.display='block';this.style.display='none';" class="btn btn-primary btn-sm">+ Add License</button>
+    </div>
+    <div class="card-body">
+        <!-- Add license form (hidden by default) -->
+        <div id="addLicForm" style="display:none;padding:16px;background:var(--bg-elevated);border-radius:8px;margin-bottom:16px;">
+            <form method="POST">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="add_license">
+                <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px;">
+                    <div>
+                        <label class="form-label">Tier</label>
+                        <select name="tier" class="filter-select" style="width:100%;">
+                            <option value="free">Free (10)</option>
+                            <option value="professional" selected>Professional (50)</option>
+                            <option value="enterprise">Enterprise (200)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">Valid From</label>
+                        <input type="date" name="valid_from" class="filter-select" style="width:100%;">
+                    </div>
+                    <div>
+                        <label class="form-label">Valid Until</label>
+                        <input type="date" name="valid_until" class="filter-select" style="width:100%;">
+                    </div>
+                    <div>
+                        <label class="form-label">Price (USD)</label>
+                        <input type="number" name="price_paid" placeholder="0.00" step="0.01" class="form-input">
+                    </div>
+                </div>
+                <div style="display:flex;gap:8px;">
+                    <button type="submit" class="btn btn-primary btn-sm">Add License</button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('addLicForm').style.display='none';">Cancel</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- License table -->
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Tier</th>
+                    <th>Valid From</th>
+                    <th>Valid Until</th>
+                    <th>Endpoints</th>
+                    <th>Price</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for lic in licenses %}
+                <tr>
+                    <td>{{ lic.get_tier_display }}</td>
+                    <td>{{ lic.valid_from }}</td>
+                    <td>{{ lic.valid_until }}</td>
+                    <td>{{ lic.max_endpoints }}</td>
+                    <td>${{ lic.price_paid }}</td>
+                    <td>
+                        {% if not lic.is_expired and lic.is_active %}
+                        <span class="badge badge-low">Active</span>
+                        {% else %}
+                        <span class="badge" style="background:var(--bg-elevated);color:var(--text-muted);">Expired</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">No licenses yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

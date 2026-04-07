@@ -3,6 +3,7 @@ from .models import (
     Client, Process, Port, SuspiciousActivity, Vulnerability,
     ThreatIntelIP, ThreatIntelHash, ExclusionRule, Event, Signature,
     Incident, IncidentActivity, IncidentComment, WindowsEventLog,
+    Company, License,
 )
 
 # Register your models here.
@@ -112,6 +113,18 @@ class WindowsEventLogAdmin(admin.ModelAdmin):
     def get_model_perms(self, request):
         """Hide from admin index. Deprecated model."""
         return {}
+
+
+@admin.register(Company)
+class CompanyAdmin(admin.ModelAdmin):
+    list_display = ['name', 'contact_email', 'endpoint_count', 'is_active', 'created_at']
+    list_filter = ['is_active']
+
+
+@admin.register(License)
+class LicenseAdmin(admin.ModelAdmin):
+    list_display = ['company', 'tier', 'valid_from', 'valid_until', 'max_endpoints', 'is_active', 'is_expired']
+    list_filter = ['tier', 'is_active']
 
 
 @admin.register(ExclusionRule)

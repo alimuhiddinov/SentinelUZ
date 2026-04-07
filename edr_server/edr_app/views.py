@@ -17,7 +17,7 @@ import json
 import os
 from .models import (
     Client, Process, Port, SuspiciousActivity, Vulnerability,
-    VulnerabilityMatch, Log, WindowsEventLog,
+    VulnerabilityMatch, Log, WindowsEventLog, Company, License,
     ThreatIntelIP, ThreatIntelHash, ExclusionRule, Event, Signature,
     Incident, IncidentActivity, IncidentComment, Report,
 )
@@ -735,6 +735,27 @@ def upload_data(request):
                 {'error': 'Hostname is required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+        # License enforcement (skipped if no Company exists)
+        from .models import Company as CompanyModel
+        company = CompanyModel.objects.filter(is_active=True).first()
+        if company:
+            active_lic = company.active_license
+            if not active_lic:
+                return Response(
+                    {'error': 'No active license. Contact your administrator.',
+                     'code': 'NO_LICENSE'},
+                    status=402)
+            existing = Client.objects.filter(hostname=hostname).first()
+            if not existing:
+                current_count = company.endpoint_count
+                if current_count >= active_lic.max_endpoints:
+                    return Response(
+                        {'error': (f'Endpoint limit reached '
+                                   f'({current_count}/{active_lic.max_endpoints}). '
+                                   f'Upgrade your license.'),
+                         'code': 'LICENSE_LIMIT'},
+                        status=403)
 
         # Validate required data
         if not any(key in data for key in ['processes', 'ports', 'alerts']):
@@ -1891,3 +1912,89 @@ def compliance_report(request):
     response = HttpResponse(csv_bytes, content_type='text/csv')
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
+
+
+# ─── Owner Portal ────────────────────────────────────────────
+
+@owner_required
+def owner_company(request):
+    from django.contrib.auth.models import User
+
+    company = Company.objects.first()
+    if not company:
+        return render(request, 'edr_app/owner_company.html',
+                      {'company': None, 'setup_needed': True})
+
+    if request.method == 'POST':
+        action = request.POST.get('action', '')
+        if action == 'update_company':
+            company.name = request.POST.get('name', company.name)
+            company.contact_name = request.POST.get('contact_name', '')
+            company.contact_email = request.POST.get('contact_email', '')
+            company.contact_phone = request.POST.get('contact_phone', '')
+            company.notes = request.POST.get('notes', '')
+            company.save()
+        elif action == 'add_license':
+            tier = request.POST.get('tier', 'professional')
+            from_str = request.POST.get('valid_from', '')
+            until_str = request.POST.get('valid_until', '')
+            price = request.POST.get('price_paid', '0')
+            if from_str and until_str:
+                License.objects.create(
+                    company=company,
+                    tier=tier,
+                    valid_from=datetime.strptime(from_str, '%Y-%m-%d').date(),
+                    valid_until=datetime.strptime(until_str, '%Y-%m-%d').date(),
+                    price_paid=float(price or 0),
+                    is_active=True,
+                    created_by=request.user,
+                )
+        return redirect('owner_company')
+
+    licenses = company.licenses.all().order_by('-valid_until')
+    active = company.active_license
+    warn_expiry = active and active.days_remaining < 30
+
+    return render(request, 'edr_app/owner_company.html', {
+        'company': company,
+        'licenses': licenses,
+        'active': active,
+        'warn_expiry': warn_expiry,
+        'endpoint_count': company.endpoint_count,
+        'setup_needed': False,
+    })
+
+
+@owner_required
+def owner_users(request):
+    from django.contrib.auth.models import User
+
+    if request.method == 'POST':
+        action = request.POST.get('action', '')
+        if action == 'create':
+            username = request.POST.get('username', '').strip()
+            email = request.POST.get('email', '').strip()
+            password = request.POST.get('password', '')
+            if username and password:
+                if not User.objects.filter(username=username).exists():
+                    User.objects.create_user(
+                        username=username, email=email,
+                        password=password, is_staff=False, is_active=True)
+        elif action == 'deactivate':
+            uid = request.POST.get('user_id')
+            if uid:
+                u = User.objects.filter(id=uid, is_superuser=False).first()
+                if u:
+                    u.is_active = False
+                    u.save()
+        elif action == 'reactivate':
+            uid = request.POST.get('user_id')
+            if uid:
+                u = User.objects.filter(id=uid).first()
+                if u:
+                    u.is_active = True
+                    u.save()
+        return redirect('owner_users')
+
+    users = User.objects.filter(is_superuser=False).order_by('username')
+    return render(request, 'edr_app/owner_users.html', {'users': users})

@@ -8,6 +8,9 @@ class Client(models.Model):
     last_seen = models.DateTimeField(auto_now=True)
     auth_token = models.CharField(max_length=255, unique=True, null=True, blank=True)
     is_active = models.BooleanField(default=True)
+    company = models.ForeignKey(
+        'Company', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='clients')
 
     def __str__(self):
         return f"{self.hostname} ({self.ip_address})"
@@ -506,3 +509,83 @@ class Report(models.Model):
         elif b < 1024**2:
             return f"{b/1024:.1f} KB"
         return f"{b/1024**2:.1f} MB"
+
+
+class Company(models.Model):
+    name = models.CharField(max_length=200)
+    contact_name = models.CharField(max_length=200, blank=True)
+    contact_email = models.EmailField(blank=True)
+    contact_phone = models.CharField(max_length=50, blank=True)
+    address = models.TextField(blank=True)
+    notes = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name_plural = 'Companies'
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def active_license(self):
+        return self.licenses.filter(
+            is_active=True,
+            valid_until__gte=timezone.now().date()
+        ).order_by('-valid_until').first()
+
+    @property
+    def endpoint_count(self):
+        return Client.objects.filter(company=self).count()
+
+
+class License(models.Model):
+    TIER_CHOICES = [
+        ('free', 'Free (10 endpoints)'),
+        ('professional', 'Professional (50 endpoints)'),
+        ('enterprise', 'Enterprise (200 endpoints)'),
+    ]
+    TIER_LIMITS = {
+        'free': 10,
+        'professional': 50,
+        'enterprise': 200,
+    }
+
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name='licenses')
+    tier = models.CharField(max_length=20, choices=TIER_CHOICES)
+    valid_from = models.DateField()
+    valid_until = models.DateField()
+    max_endpoints = models.IntegerField()
+    price_paid = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0)
+    currency = models.CharField(max_length=3, default='USD')
+    is_active = models.BooleanField(default=True)
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        'auth.User', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='created_licenses')
+
+    class Meta:
+        ordering = ['-valid_until']
+
+    def save(self, *args, **kwargs):
+        if not self.max_endpoints:
+            self.max_endpoints = self.TIER_LIMITS.get(self.tier, 10)
+        super().save(*args, **kwargs)
+
+    @property
+    def is_expired(self):
+        from datetime import date
+        return date.today() > self.valid_until
+
+    @property
+    def days_remaining(self):
+        from datetime import date
+        delta = self.valid_until - date.today()
+        return max(0, delta.days)
+
+    def __str__(self):
+        return f"{self.company.name} — {self.get_tier_display()} until {self.valid_until}"
