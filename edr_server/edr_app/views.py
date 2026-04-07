@@ -98,6 +98,8 @@ def dashboard(request):
         timestamp__gte=twenty_four_h_ago).count()
     ti_total = (ThreatIntelIP.objects.filter(is_active=True).count() +
                 ThreatIntelHash.objects.filter(is_active=True).count())
+    open_incidents = Incident.objects.filter(
+        status__in=['open', 'in_progress']).count()
 
     endpoints = Client.objects.annotate(
         process_count=Count('processes', distinct=True),
@@ -125,6 +127,7 @@ def dashboard(request):
         'critical_alerts': critical_alerts,
         'alerts_24h': alerts_24h,
         'ti_total': ti_total,
+        'open_incidents': open_incidents,
         'endpoints': endpoints,
         'recent_alerts': recent_alerts,
         'severity_counts': severity_counts,
@@ -150,6 +153,8 @@ def dashboard_stats_api(request):
         timestamp__gte=twenty_four_h_ago).count()
     ti_total = (ThreatIntelIP.objects.filter(is_active=True).count() +
                 ThreatIntelHash.objects.filter(is_active=True).count())
+    open_incidents = Incident.objects.filter(
+        status__in=['open', 'in_progress']).count()
 
     endpoints_qs = Client.objects.annotate(
         process_count=Count('processes', distinct=True),
@@ -199,6 +204,7 @@ def dashboard_stats_api(request):
         'critical_alerts': critical_alerts,
         'alerts_24h': alerts_24h,
         'ti_total': ti_total,
+        'open_incidents': open_incidents,
         'endpoints': endpoints_data,
         'recent_alerts': recent,
         'severity_counts': severity_counts,
@@ -294,7 +300,7 @@ def alerts(request):
     page = int(request.GET.get('page', 1))
     per_page = 50
 
-    qs = SuspiciousActivity.objects.select_related('client').order_by('-last_seen')
+    qs = SuspiciousActivity.objects.select_related('client').prefetch_related('incidents').order_by('-last_seen')
 
     if status_filter and status_filter != 'all':
         qs = qs.filter(status=status_filter)
@@ -316,6 +322,7 @@ def alerts(request):
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         data = []
         for a in alerts_page:
+            inc = a.incidents.first()
             data.append({
                 'id': a.id,
                 'type': a.type,
@@ -330,6 +337,8 @@ def alerts(request):
                 'timestamp': a.timestamp.isoformat() if a.timestamp else None,
                 'last_seen': a.last_seen.isoformat() if a.last_seen else None,
                 'score': a.score,
+                'incident_ref': inc.reference if inc else None,
+                'incident_id': inc.id if inc else None,
             })
         return JsonResponse({
             'alerts': data, 'total': total, 'page': page,
@@ -1898,6 +1907,11 @@ def endpoint_events_api(request):
         ]).count(),
     }
 
+    # Event type distribution
+    from django.db.models import Count as DjCount
+    dist_qs = all_qs.values('event_type').annotate(cnt=DjCount('id')).order_by('-cnt')
+    distribution = [{'type': r['event_type'], 'count': r['cnt']} for r in dist_qs]
+
     # Volume chart (24h by hour)
     chart = []
     now = timezone.now()
@@ -1917,6 +1931,7 @@ def endpoint_events_api(request):
         'has_more': (start + per_page) < total,
         'tab_counts': counts,
         'chart': chart,
+        'distribution': distribution,
     })
 
 

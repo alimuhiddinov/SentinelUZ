@@ -20,6 +20,21 @@
     .btn-acknowledge:hover { border-color: var(--accent); color: var(--accent); }
     .acknowledged-badge { font-size: var(--text-xs); color: var(--status-online); }
 
+    .header-actions { display: flex; align-items: center; gap: 8px; }
+    .status-dropdown-wrap { position: relative; display: inline-block; }
+    .status-dropdown { display: none; position: absolute; right: 0; top: 100%; background: var(--bg-elevated); border: 1px solid var(--border-default); border-radius: 6px; z-index: 50; min-width: 180px; padding: 4px 0; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+    .status-dropdown.open { display: block; }
+    .status-dropdown button { display: block; width: 100%; text-align: left; background: none; border: none; padding: 8px 14px; font-family: var(--font-ui); font-size: var(--text-sm); color: var(--text-secondary); cursor: pointer; }
+    .status-dropdown button:hover { background: var(--bg-selected); color: var(--text-primary); }
+    .status-badge-hdr { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .status-badge-hdr.status-open { background: var(--bg-elevated); color: var(--text-secondary); border: 1px solid var(--border-default); }
+    .status-badge-hdr.status-in_response { background: var(--low-bg); color: var(--low); border: 1px solid var(--low-border); }
+    .status-badge-hdr.status-in_incident { background: var(--suspicious-bg); color: var(--suspicious); border: 1px solid #4c1d95; }
+    .status-badge-hdr.status-false_positive { background: var(--high-bg); color: var(--high); border: 1px solid var(--high-border); }
+    .status-badge-hdr.status-closed { background: var(--bg-elevated); color: var(--text-muted); border: 1px solid var(--border-subtle); }
+    .incident-link { font-size: var(--text-xs); color: var(--suspicious); background: var(--suspicious-bg); border: 1px solid #4c1d95; padding: 2px 8px; border-radius: 3px; text-decoration: none; font-weight: 600; }
+    .incident-link:hover { color: #c4b5fd; }
+
     .tab-nav { display: flex; gap: 2px; border-bottom: 1px solid var(--border-subtle); margin-bottom: 20px; }
     .tab-btn { display: flex; align-items: center; gap: 6px; background: transparent; border: none; border-bottom: 2px solid transparent; padding: 10px 16px; font-family: var(--font-ui); font-size: var(--text-sm); color: var(--text-secondary); cursor: pointer; margin-bottom: -1px; }
     .tab-btn:hover { color: var(--text-primary); }
@@ -147,16 +162,35 @@
 <div class="alert-detail-header" style="border-left: 4px solid {% if alert.severity == 'CRITICAL' %}var(--critical){% elif alert.severity == 'HIGH' %}var(--high){% elif alert.severity == 'MEDIUM' %}var(--medium){% else %}var(--low){% endif %}">
     <div class="header-top">
         <a href="{% url 'alerts' %}" class="back-link">&larr; All Alerts</a>
-        <div>
-            {% if not alert.is_acknowledged %}
-            <button class="btn-acknowledge" onclick="acknowledgeAlert({{ alert.id }})">Acknowledge</button>
-            {% else %}
-            <span class="acknowledged-badge">&#10003; Acknowledged</span>
+        <div class="header-actions">
+            {% for inc in alert.incidents.all %}
+            <a href="{% url 'incident_detail_page' inc.id %}" class="incident-link">{{ inc.reference }}</a>
+            {% endfor %}
+            <div class="status-dropdown-wrap">
+                <button class="btn-acknowledge" onclick="toggleStatusDropdown(event)">Change Status &#9660;</button>
+                <div class="status-dropdown" id="statusDropdown">
+                    {% if alert.status == 'open' %}
+                    <button onclick="changeStatus('in_response')">Mark In Response</button>
+                    {% endif %}
+                    {% if alert.status != 'false_positive' %}
+                    <button onclick="changeStatus('false_positive')">Mark False Positive</button>
+                    {% endif %}
+                    {% if alert.status != 'closed' %}
+                    <button onclick="changeStatus('close')">Close</button>
+                    {% endif %}
+                    {% if alert.status == 'false_positive' or alert.status == 'closed' %}
+                    <button onclick="changeStatus('reopen')">Reopen</button>
+                    {% endif %}
+                </div>
+            </div>
+            {% if alert.status == 'open' or alert.status == 'in_response' %}
+            <button class="btn-acknowledge" onclick="window.location='{% url 'alerts' %}'">Create Incident</button>
             {% endif %}
         </div>
     </div>
     <div class="header-main">
         <span class="badge badge-{{ alert.severity|lower }}">{{ alert.severity }}</span>
+        <span class="status-badge-hdr status-{{ alert.status }}" id="statusBadge">{{ alert.get_status_display }}</span>
         <h1 class="alert-title">{{ alert.type }}</h1>
         <span class="alert-device mono">{{ alert.client.hostname }}</span>
     </div>
@@ -414,16 +448,35 @@ function loadNetwork() {
         .catch(function() { c.innerHTML = '<div class="context-loading">No network connections found.</div>'; });
 }
 
-function acknowledgeAlert(alertId) {
-    fetch('/api/alerts/' + alertId + '/acknowledge/', {
-        method: 'POST',
-        headers: {'X-CSRFToken': getCSRF()}
-    }).then(function(r) {
-        if (r.ok) {
-            document.querySelector('.btn-acknowledge').outerHTML = '<span class="acknowledged-badge">&#10003; Acknowledged</span>';
-            showToast('Alert acknowledged');
-        }
-    }).catch(function() { showToast('Failed to acknowledge'); });
+function toggleStatusDropdown(e) {
+    e.stopPropagation();
+    var dd = document.getElementById('statusDropdown');
+    dd.classList.toggle('open');
+}
+document.addEventListener('click', function() {
+    var dd = document.getElementById('statusDropdown');
+    if (dd) dd.classList.remove('open');
+});
+
+function changeStatus(action) {
+    var body = { action: action };
+    if (action === 'false_positive') {
+        var reason = prompt('Reason for marking as false positive:');
+        if (!reason) return;
+        body.reason = reason;
+    }
+    fetch('/api/alerts/' + ALERT_ID + '/action/', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRF() },
+        body: JSON.stringify(body),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { showToast(d.error); return; }
+        showToast('Status updated to: ' + d.status);
+        setTimeout(function() { location.reload(); }, 500);
+    })
+    .catch(function() { showToast('Failed to update status'); });
 }
 
 /* ── GIB-style context tree renderer ── */

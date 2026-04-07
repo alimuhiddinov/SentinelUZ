@@ -7,7 +7,7 @@ def edr_stats(request):
     if not request.user.is_authenticated:
         return {}
 
-    from .models import Client, SuspiciousActivity, ThreatIntelIP, ThreatIntelHash
+    from .models import Client, SuspiciousActivity, ThreatIntelIP, ThreatIntelHash, Incident
 
     now = timezone.now()
     two_min_ago = now - timedelta(minutes=2)
@@ -17,6 +17,8 @@ def edr_stats(request):
     critical_count = SuspiciousActivity.objects.filter(severity='CRITICAL').count()
     ti_ip_count = ThreatIntelIP.objects.filter(is_active=True).count()
     ti_hash_count = ThreatIntelHash.objects.filter(is_active=True).count()
+    open_incidents = Incident.objects.filter(
+        status__in=['open', 'in_progress']).count()
 
     return {
         'stats_active_endpoints': active_count,
@@ -24,4 +26,5 @@ def edr_stats(request):
         'stats_critical_count': critical_count,
         'stats_ti_ip_count': ti_ip_count,
         'stats_ti_hash_count': ti_hash_count,
+        'stats_open_incidents': open_incidents,
     }

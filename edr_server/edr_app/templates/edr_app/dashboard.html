@@ -6,7 +6,7 @@
 /* ── Stat Grid ── */
 .stat-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 16px;
     margin-bottom: 20px;
 }
@@ -52,6 +52,9 @@
 .stat-box.stat-critical.has-alerts .stat-box-value { color: var(--critical); }
 .stat-box.stat-24h { border-top-color: var(--high); }
 .stat-box.stat-ti { border-top-color: var(--accent); }
+.stat-box.stat-incidents { border-top-color: var(--border-default); }
+.stat-box.stat-incidents.has-incidents { border-top-color: var(--critical); background: var(--critical-bg); border-color: var(--critical-border); }
+.stat-box.stat-incidents.has-incidents .stat-box-value { color: var(--critical); }
 
 /* ── Two-Column Layout ── */
 .dash-grid {
@@ -273,6 +276,12 @@ td.col-proc { text-align: center; }
         <div class="stat-box-label">Alerts (24h)</div>
         <div class="stat-box-value"><span id="stat-24h">{{ alerts_24h }}</span></div>
         <div class="stat-box-sub">in the last 24 hours</div>
+    </div>
+
+    <div class="stat-box stat-incidents clickable {% if open_incidents > 0 %}has-incidents{% endif %}" onclick="window.location='{% url 'incidents' %}'">
+        <div class="stat-box-label">Open Incidents</div>
+        <div class="stat-box-value"><span id="stat-incidents">{{ open_incidents }}</span></div>
+        <div class="stat-box-sub">{% if open_incidents > 0 %}require attention{% else %}all clear{% endif %}</div>
     </div>
 
     <div class="stat-box stat-ti clickable" onclick="window.location='{% url 'ioc_manager' %}'">
@@ -503,6 +512,15 @@ function refreshDashboard() {
         if (critEl) critEl.textContent = d.critical_alerts;
         if (h24El) h24El.textContent = d.alerts_24h;
         if (tiEl) tiEl.textContent = formatNumber(d.ti_total);
+
+        // Incidents card
+        var incEl = document.getElementById('stat-incidents');
+        if (incEl) incEl.textContent = d.open_incidents || 0;
+        var incCard = document.querySelector('.stat-incidents');
+        if (incCard) {
+            if (d.open_incidents > 0) incCard.classList.add('has-incidents');
+            else incCard.classList.remove('has-incidents');
+        }
 
         // Critical card glow
         var critCard = document.querySelector('.stat-critical');

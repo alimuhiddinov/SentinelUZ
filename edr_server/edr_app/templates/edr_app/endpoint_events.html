@@ -61,6 +61,30 @@
 .export-bar .btn { flex: 1; }
 
 @media (max-width: 600px) { .slide-panel { width: 100%; right: -100%; } }
+
+/* ── Query Help Tooltip ── */
+.query-help-wrap { position: relative; display: inline-flex; }
+.query-help-btn { width: 22px; height: 22px; border-radius: 50%; background: var(--bg-elevated); border: 1px solid var(--border-default); color: var(--text-muted); font-size: 12px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; font-family: var(--font-ui); line-height: 1; }
+.query-help-btn:hover { color: var(--accent); border-color: var(--accent); }
+.query-help-tooltip { display: none; position: absolute; top: 100%; right: 0; margin-top: 6px; background: var(--bg-elevated); border: 1px solid var(--border-default); border-radius: 8px; padding: 14px 16px; z-index: 100; width: 380px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); font-size: var(--text-xs); color: var(--text-secondary); line-height: 1.6; }
+.query-help-wrap:hover .query-help-tooltip { display: block; }
+.query-help-tooltip pre { margin: 6px 0; padding: 8px 10px; background: var(--bg-page); border-radius: 4px; font-family: var(--font-mono); font-size: 11px; color: var(--text-primary); white-space: pre; overflow-x: auto; }
+.query-help-tooltip .qh-title { font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
+
+/* ── Distribution Bar ── */
+.dist-bar { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 16px; }
+.dist-item { display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 4px; cursor: pointer; transition: background 0.15s, border-color 0.15s; font-size: var(--text-xs); }
+.dist-item:hover { background: var(--bg-elevated); border-color: var(--border-bright); }
+.dist-item.active { background: var(--bg-selected); border-color: var(--accent); }
+.dist-fill { height: 10px; border-radius: 2px; min-width: 4px; }
+.dist-fill-PROCESS_START { background: var(--text-secondary); }
+.dist-fill-NETWORK_CONNECT { background: var(--accent); }
+.dist-fill-HASH_MATCH { background: var(--critical); }
+.dist-fill-IP_MATCH { background: var(--high); }
+.dist-fill-LOLBIN_CHAIN { background: var(--lolbin); }
+.dist-fill-RANSOMWARE_PRECURSOR { background: var(--critical); }
+.dist-count { font-family: var(--font-mono); font-weight: 600; color: var(--text-primary); }
+.dist-label { color: var(--text-muted); }
 {% endblock %}
 
 {% block content %}
@@ -89,6 +113,23 @@
         <div class="query-hint" data-q="process:powershell.exe AND NOT status:false_positive">process:powershell.exe AND NOT status:false_positive</div>
         <div class="query-hint" data-q="after:2026-04-01 before:2026-04-10">after:2026-04-01 before:2026-04-10</div>
         <div class="query-hint" data-q="type:RANSOMWARE_PRECURSOR OR type:LOLBIN_CHAIN">type:RANSOMWARE_PRECURSOR OR type:LOLBIN_CHAIN</div>
+    </div>
+    <div class="query-help-wrap">
+        <span class="query-help-btn">?</span>
+        <div class="query-help-tooltip">
+            <div class="qh-title">Query Language Reference</div>
+            <pre>Supported fields:
+  type: host: ip: process: hash: after: before:
+
+Operators:
+  AND  OR  NOT  ( )
+
+Examples:
+  type:HASH_MATCH OR type:IP_MATCH
+  host:PC-01 AND process:powershell.exe
+  ip:185.220.101.47
+  after:2026-04-01 before:2026-04-10</pre>
+        </div>
     </div>
     <button id="runQueryBtn" class="btn btn-primary" style="white-space:nowrap">Search</button>
     <button id="clearQueryBtn" class="btn" style="white-space:nowrap">Clear</button>
@@ -128,6 +169,9 @@
     <div style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:8px">Event volume (last 24 hours)</div>
     <svg id="volumeChart" width="100%" height="60" style="display:block"></svg>
 </div>
+
+<!-- Distribution Bar -->
+<div class="dist-bar" id="distBar"></div>
 
 <!-- Events Table -->
 <div class="card" style="overflow:hidden">
@@ -219,7 +263,10 @@ function loadEvents(append) {
         .then(function(data) {
             renderEvents(data, append);
             renderCounts(data.tab_counts);
-            if (!append) renderChart(data.chart);
+            if (!append) {
+                renderChart(data.chart);
+                renderDistribution(data.distribution);
+            }
         })
         .catch(function() {
             if (!append) document.getElementById('eventsBody').innerHTML = '<tr><td colspan="3" style="text-align:center;padding:40px;color:var(--text-muted)">Failed to load events.</td></tr>';
@@ -253,6 +300,31 @@ function renderCounts(counts) {
     document.getElementById('cntAll').textContent = counts.all;
     document.getElementById('cntSuspicious').textContent = counts.suspicious;
     document.getElementById('cntAlerts').textContent = counts.alerts;
+}
+
+var TYPE_LABELS = {PROCESS_START:'Process', NETWORK_CONNECT:'Network', HASH_MATCH:'Hash Match', IP_MATCH:'IP Match', LOLBIN_CHAIN:'LOLBin Chain', RANSOMWARE_PRECURSOR:'Ransomware'};
+
+function renderDistribution(dist) {
+    var bar = document.getElementById('distBar');
+    if (!dist || !dist.length) { bar.innerHTML = ''; return; }
+    var maxCount = Math.max.apply(null, dist.map(function(d) { return d.count; })) || 1;
+    var activeType = document.getElementById('typeFilter').value;
+    bar.innerHTML = '';
+    dist.forEach(function(d) {
+        var fillW = Math.max(8, Math.round(d.count / maxCount * 60));
+        var item = document.createElement('div');
+        item.className = 'dist-item' + (activeType === d.type ? ' active' : '');
+        item.innerHTML = '<div class="dist-fill dist-fill-' + d.type + '" style="width:' + fillW + 'px"></div>' +
+            '<span class="dist-count">' + d.count.toLocaleString() + '</span>' +
+            '<span class="dist-label">' + (TYPE_LABELS[d.type] || d.type) + '</span>';
+        item.addEventListener('click', function() {
+            var sel = document.getElementById('typeFilter');
+            sel.value = (sel.value === d.type) ? '' : d.type;
+            currentPage = 1;
+            loadEvents(false);
+        });
+        bar.appendChild(item);
+    });
 }
 
 function renderChart(chart) {

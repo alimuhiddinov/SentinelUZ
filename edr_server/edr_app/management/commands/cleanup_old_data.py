@@ -96,7 +96,7 @@ class Command(BaseCommand):
 
         # NEVER AUTO-DELETE:
         # status='open'          — active, being worked
-        # status='acknowledged'  — active, being worked
+        # status='in_response'   — active, being worked
         # status='in_incident'   — incident demands permanence
         # incidents__isnull=False — ANY incident link = protected
         #
