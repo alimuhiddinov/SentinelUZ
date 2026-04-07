@@ -519,51 +519,9 @@ def vulnerabilities(request):
     }
     return render(request, 'edr_app/vulnerabilities.html', context)
 
-@login_required
 def logs(request):
-    try:
-        with transaction.atomic():
-            # Get filter parameters
-            source = request.GET.get('source')
-            level = request.GET.get('level')
-            start_date = request.GET.get('start_date')
-            end_date = request.GET.get('end_date')
-
-            # Base queryset with select_related to optimize queries
-            logs = WindowsEventLog.objects.select_related('client').all().order_by('-timestamp')
-
-            # Apply filters
-            if source:
-                logs = logs.filter(source=source)
-            if level:
-                logs = logs.filter(level=level)
-            if start_date:
-                logs = logs.filter(timestamp__gte=start_date)
-            if end_date:
-                logs = logs.filter(timestamp__lte=end_date)
-
-            # Paginate results
-            paginator = Paginator(logs, 50)  # Show 50 logs per page
-            page_number = request.GET.get('page')
-            page_obj = paginator.get_page(page_number)
-
-            # Get unique sources and levels for filter dropdowns
-            sources = WindowsEventLog.objects.values_list('source', flat=True).distinct()
-            levels = WindowsEventLog.objects.values_list('level', flat=True).distinct()
-
-            context = {
-                'logs': page_obj,
-                'sources': sources,
-                'levels': levels,
-                'current_source': source,
-                'current_level': level,
-                'start_date': start_date,
-                'end_date': end_date,
-            }
-            return render(request, 'edr_app/logs.html', context)
-    except Exception as e:
-        messages.error(request, f"Error loading logs: {str(e)}")
-        return render(request, 'edr_app/logs.html', {'error': str(e)})
+    """Deprecated — redirects to Endpoint Events."""
+    return redirect('endpoint_events')
 
 @staff_member_required
 def view_logs(request):

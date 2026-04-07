@@ -2,7 +2,7 @@ from django.contrib import admin
 from .models import (
     Client, Process, Port, SuspiciousActivity, Vulnerability,
     ThreatIntelIP, ThreatIntelHash, ExclusionRule, Event, Signature,
-    Incident, IncidentActivity, IncidentComment,
+    Incident, IncidentActivity, IncidentComment, WindowsEventLog,
 )
 
 # Register your models here.
@@ -102,6 +102,16 @@ class IncidentAdmin(admin.ModelAdmin):
     search_fields = ['title', 'description']
     readonly_fields = ['number', 'created_at', 'updated_at']
     inlines = [IncidentActivityInline, IncidentCommentInline]
+
+
+@admin.register(WindowsEventLog)
+class WindowsEventLogAdmin(admin.ModelAdmin):
+    list_display = ['source', 'level', 'event_id', 'client', 'timestamp']
+    list_filter = ['source', 'level']
+
+    def get_model_perms(self, request):
+        """Hide from admin index. Deprecated model."""
+        return {}
 
 
 @admin.register(ExclusionRule)
