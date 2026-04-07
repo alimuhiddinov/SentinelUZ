@@ -40,6 +40,10 @@ urlpatterns = [
     path('api/sync-ti/', views.sync_ti_feeds_view, name='sync_ti_feeds_view'),
     path('api/ioc/add/', views.ioc_add, name='ioc_add'),
     path('api/exclusions/<int:rule_id>/delete/', views.exclusion_delete, name='exclusion_delete'),
+    path('api/exclusions/create/', views.exclusion_create, name='exclusion_create'),
+    path('api/alerts/<int:alert_id>/action/', views.alert_action, name='alert_action'),
+    path('api/alerts/counts/', views.alert_counts, name='alert_counts'),
+    path('api/alerts/bulk-action/', views.alert_bulk_action, name='alert_bulk_action'),
 
     # Signatures & Events
     path('api/alerts/<int:alert_id>/signatures/', views.alert_signatures, name='alert_signatures'),

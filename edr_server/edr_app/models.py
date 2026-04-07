@@ -120,7 +120,7 @@ class SuspiciousActivity(models.Model):
 
     ALERT_STATUS = [
         ('open',           'Open'),
-        ('acknowledged',   'Acknowledged'),
+        ('in_response',    'In Response'),
         ('false_positive', 'False Positive'),
         ('in_incident',    'In Incident'),
         ('closed',         'Closed'),
@@ -147,7 +147,7 @@ class SuspiciousActivity(models.Model):
 
     @property
     def is_acknowledged(self):
-        return self.status in ('acknowledged', 'in_incident', 'false_positive', 'closed')
+        return self.status in ('in_response', 'in_incident', 'false_positive', 'closed')
 
     def can_mark_false_positive(self):
         if hasattr(self, 'incidents') and self.incidents.exists():
@@ -156,7 +156,7 @@ class SuspiciousActivity(models.Model):
         return True, ""
 
     def can_delete(self):
-        if self.status in ('open', 'acknowledged'):
+        if self.status in ('open', 'in_response', 'in_incident'):
             return False
         if hasattr(self, 'incidents') and self.incidents.exists():
             return False

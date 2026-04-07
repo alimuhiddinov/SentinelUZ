@@ -258,10 +258,58 @@ def ports(request):
 
 @login_required
 def alerts(request):
-    alerts = SuspiciousActivity.objects.all().order_by('-last_seen')[:100]
-    context = {
-        'alerts': alerts,
-    }
+    from .query_parser import apply_query
+
+    status_filter = request.GET.get('status', 'open')
+    query_str = request.GET.get('query', '')
+    date_from = request.GET.get('date_from', '')
+    date_to = request.GET.get('date_to', '')
+    page = int(request.GET.get('page', 1))
+    per_page = 50
+
+    qs = SuspiciousActivity.objects.select_related('client').order_by('-last_seen')
+
+    if status_filter and status_filter != 'all':
+        qs = qs.filter(status=status_filter)
+
+    if date_from:
+        qs = qs.filter(last_seen__gte=date_from + 'T00:00:00Z')
+    if date_to:
+        qs = qs.filter(last_seen__lte=date_to + 'T23:59:59Z')
+
+    if query_str:
+        qs, _ = apply_query(qs, query_str, mode='alerts')
+
+    total = qs.count()
+    start = (page - 1) * per_page
+    alerts_page = qs[start:start + per_page]
+    has_more = (start + per_page) < total
+
+    # If AJAX request, return JSON
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        data = []
+        for a in alerts_page:
+            data.append({
+                'id': a.id,
+                'type': a.type,
+                'severity': a.severity,
+                'status': a.status,
+                'description': a.description[:120],
+                'process_name': a.process_name or '',
+                'process_id': a.process_id,
+                'ioc_matched': a.ioc_matched or '',
+                'event_count': a.event_count,
+                'hostname': a.client.hostname if a.client else '',
+                'timestamp': a.timestamp.isoformat() if a.timestamp else None,
+                'last_seen': a.last_seen.isoformat() if a.last_seen else None,
+                'score': a.score,
+            })
+        return JsonResponse({
+            'alerts': data, 'total': total, 'page': page,
+            'per_page': per_page, 'has_more': has_more,
+        })
+
+    context = {'alerts': alerts_page, 'total': total}
     return render(request, 'edr_app/alerts.html', context)
 
 @login_required
@@ -415,7 +463,7 @@ def alert_acknowledge(request, alert_id):
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=405)
     alert = get_object_or_404(SuspiciousActivity, id=alert_id)
-    alert.status = 'acknowledged'
+    alert.status = 'in_response'
     alert.save(update_fields=['status'])
     return JsonResponse({'status': 'ok'})
 
@@ -1307,6 +1355,120 @@ def exclusion_delete(request, rule_id):
 @login_required
 def help_center(request):
     return render(request, 'edr_app/help_center.html')
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def alert_action(request, alert_id):
+    alert = get_object_or_404(SuspiciousActivity, id=alert_id)
+    action = request.data.get('action', '')
+    reason = request.data.get('reason', '')
+
+    if action == 'in_response':
+        if alert.status == 'open':
+            alert.status = 'in_response'
+    elif action == 'false_positive':
+        ok, msg = alert.can_mark_false_positive()
+        if not ok:
+            return Response({'error': msg}, status=400)
+        if not reason.strip():
+            return Response({'error': 'Reason required'}, status=400)
+        alert.status = 'false_positive'
+        alert.false_positive_reason = reason
+        alert.closed_at = timezone.now()
+    elif action == 'close':
+        alert.status = 'closed'
+        alert.closed_at = timezone.now()
+    elif action == 'reopen':
+        if alert.status not in ('false_positive', 'closed'):
+            return Response({'error': 'Can only reopen FP or closed'}, status=400)
+        alert.status = 'open'
+        alert.closed_at = None
+    elif action == 'in_incident':
+        alert.status = 'in_incident'
+    else:
+        return Response({'error': f'Unknown action: {action}'}, status=400)
+
+    alert.save()
+    return Response({
+        'alert_id': alert_id,
+        'status': alert.status,
+        'closed_at': alert.closed_at.isoformat() if alert.closed_at else None,
+        'suggest_exclusion': action == 'false_positive' and bool(alert.process_name),
+        'process_name': alert.process_name or '',
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def alert_counts(request):
+    from django.db.models import Count
+    counts_qs = SuspiciousActivity.objects.values('status').annotate(n=Count('id'))
+    result = {r['status']: r['n'] for r in counts_qs}
+    result['all'] = sum(result.values())
+    return Response(result)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def alert_bulk_action(request):
+    ids = request.data.get('alert_ids', [])
+    action = request.data.get('action', '')
+    reason = request.data.get('reason', '')
+    if not ids:
+        return Response({'error': 'No alert_ids'}, status=400)
+    alerts_qs = SuspiciousActivity.objects.filter(id__in=ids)
+    updated = 0
+    errors = []
+    for alert in alerts_qs:
+        if action == 'in_response' and alert.status == 'open':
+            alert.status = 'in_response'
+            alert.save()
+            updated += 1
+        elif action == 'false_positive':
+            ok, msg = alert.can_mark_false_positive()
+            if ok and reason.strip():
+                alert.status = 'false_positive'
+                alert.false_positive_reason = reason
+                alert.closed_at = timezone.now()
+                alert.save()
+                updated += 1
+            else:
+                errors.append(f"Alert {alert.id}: {msg or 'reason required'}")
+        elif action == 'close':
+            alert.status = 'closed'
+            alert.closed_at = timezone.now()
+            alert.save()
+            updated += 1
+    return Response({'updated': updated, 'errors': errors})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def exclusion_create(request):
+    name = request.data.get('process_name', '').strip()
+    mode = request.data.get('match_mode', '')
+    path = request.data.get('process_path', '').strip()
+    hash_ = request.data.get('sha256_hash', '').strip()
+    reason = request.data.get('reason', '').strip()
+
+    if not name or not reason:
+        return Response({'error': 'Process name and reason required'}, status=400)
+    if mode == 'NAME_AND_PATH' and not path:
+        return Response({'error': 'Path required for Name+Path mode'}, status=400)
+    if mode in ('HASH_ONLY', 'ALL') and not hash_:
+        return Response({'error': 'Hash required for this mode'}, status=400)
+
+    rule = ExclusionRule.objects.create(
+        process_name=name, process_path=path, sha256_hash=hash_,
+        match_mode=mode, reason=reason, added_by=request.user, is_active=True,
+    )
+    from .utils import _ti_cache
+    _ti_cache['loaded_at'] = None
+
+    return Response({
+        'id': rule.id, 'process_name': rule.process_name, 'match_mode': rule.match_mode,
+    }, status=201)
 
 
 @api_view(['GET'])

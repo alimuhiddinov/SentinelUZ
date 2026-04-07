@@ -293,6 +293,45 @@
 </div>
 
 <!-- Section 4: Exclusion Rules -->
+<div class="card" style="margin-bottom:16px">
+    <div class="card-header"><span>Create Exclusion Rule</span></div>
+    <div class="card-body">
+        <div id="nameOnlyWarn" class="warning-box" style="display:none">
+            &#9888; Name Only is low safety &mdash; an attacker can name malware after a legitimate process. Use Name+Path or Hash Only instead.
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div>
+                <label style="font-size:var(--text-xs);color:var(--text-muted);display:block;margin-bottom:4px">Process Name *</label>
+                <input type="text" id="exclName" class="ioc-textarea" style="min-height:auto;height:32px;padding:6px 10px" placeholder="e.g. explorer.exe">
+            </div>
+            <div>
+                <label style="font-size:var(--text-xs);color:var(--text-muted);display:block;margin-bottom:4px">Match Mode *</label>
+                <select id="exclMode" class="ioc-select" style="width:100%" onchange="onModeChange()">
+                    <option value="NAME_AND_PATH">Name + Path (Medium Safety)</option>
+                    <option value="HASH_ONLY">SHA256 Hash Only (High Safety)</option>
+                    <option value="ALL">Name + Path + Hash (Highest Safety)</option>
+                    <option value="NAME_ONLY">Name Only (Low Safety &#9888;)</option>
+                </select>
+            </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div id="exclPathGroup">
+                <label style="font-size:var(--text-xs);color:var(--text-muted);display:block;margin-bottom:4px">Process Path</label>
+                <input type="text" id="exclPath" class="ioc-textarea" style="min-height:auto;height:32px;padding:6px 10px;font-family:var(--font-mono)" placeholder="e.g. C:\Windows\System32\">
+            </div>
+            <div id="exclHashGroup">
+                <label style="font-size:var(--text-xs);color:var(--text-muted);display:block;margin-bottom:4px">SHA256 Hash</label>
+                <input type="text" id="exclHash" class="ioc-textarea" style="min-height:auto;height:32px;padding:6px 10px;font-family:var(--font-mono)" placeholder="64-char hex string">
+            </div>
+        </div>
+        <div style="margin-bottom:12px">
+            <label style="font-size:var(--text-xs);color:var(--text-muted);display:block;margin-bottom:4px">Reason *</label>
+            <textarea id="exclReason" class="ioc-textarea" style="min-height:60px" placeholder="Why is this process excluded? e.g. Legitimate admin tool used by IT team"></textarea>
+        </div>
+        <button class="btn btn-primary" onclick="createExclusion()">Add Exclusion Rule</button>
+    </div>
+</div>
+
 <div class="card">
     <div class="card-header">
         <span>Exclusion Rules</span>
@@ -371,7 +410,7 @@
         {% endif %}
 
         <div style="margin-top:12px;font-size:var(--text-xs);color:var(--text-muted)">
-            To add new exclusion rules, use the <a href="{% url 'admin:index' %}">Django Admin panel</a> &rarr; Exclusion Rules.
+            Advanced rule management available in the <a href="{% url 'admin:index' %}">Django Admin panel</a>.
         </div>
     </div>
 </div>
@@ -513,6 +552,38 @@ function deleteExclusion(id, name) {
     .catch(function() {
         showToast('Delete failed: network error');
     });
+}
+
+function onModeChange() {
+    var mode = document.getElementById('exclMode').value;
+    document.getElementById('nameOnlyWarn').style.display = mode === 'NAME_ONLY' ? '' : 'none';
+}
+
+function createExclusion() {
+    var name = document.getElementById('exclName').value.trim();
+    var mode = document.getElementById('exclMode').value;
+    var path = document.getElementById('exclPath').value.trim();
+    var hash = document.getElementById('exclHash').value.trim();
+    var reason = document.getElementById('exclReason').value.trim();
+
+    if (!name || !reason) { showToast('Process name and reason are required'); return; }
+
+    fetch('/api/exclusions/create/', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRF() },
+        body: JSON.stringify({ process_name: name, match_mode: mode, process_path: path, sha256_hash: hash, reason: reason }),
+    })
+    .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+    .then(function(res) {
+        if (!res.ok) { showToast(res.data.error || 'Failed to create rule'); return; }
+        showToast('Exclusion rule created for ' + res.data.process_name);
+        document.getElementById('exclName').value = '';
+        document.getElementById('exclPath').value = '';
+        document.getElementById('exclHash').value = '';
+        document.getElementById('exclReason').value = '';
+        setTimeout(function() { location.reload(); }, 1000);
+    })
+    .catch(function() { showToast('Failed to create rule: network error'); });
 }
 </script>
 {% endblock %}

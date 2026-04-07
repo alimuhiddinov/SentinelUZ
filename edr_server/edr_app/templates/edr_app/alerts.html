@@ -3,390 +3,136 @@
 {% block title %}Alerts — SentinelUZ{% endblock %}
 
 {% block extra_css %}
-    /* ── Alert cards ── */
-    .alerts-list {
-        display: flex;
-        flex-direction: column;
-        gap: 0;
-    }
-    .alert-card {
-        border-radius: 4px;
-        padding: 16px 20px;
-        margin-bottom: 12px;
-        border: 1px solid var(--border-subtle);
-        border-left: 4px solid var(--border-subtle);
-        background: var(--bg-surface);
-        transition: border-color 0.15s, background 0.15s;
-    }
-    .alert-card:hover {
-        background: var(--bg-elevated);
-    }
-    .alert-card.sev-critical {
-        background: var(--critical-bg);
-        border-color: var(--critical-border);
-        border-left-color: var(--critical);
-    }
-    .alert-card.sev-critical:hover { background: #3a1a1a; }
-    .alert-card.sev-high {
-        background: var(--high-bg);
-        border-color: var(--high-border);
-        border-left-color: var(--high);
-    }
-    .alert-card.sev-high:hover { background: #3a2010; }
-    .alert-card.sev-medium {
-        background: var(--medium-bg);
-        border-color: var(--medium-border);
-        border-left-color: var(--medium);
-    }
-    .alert-card.sev-medium:hover { background: #3a3010; }
-    .alert-card.sev-low {
-        background: var(--low-bg);
-        border-color: var(--low-border);
-        border-left-color: var(--low);
-    }
-    .alert-card.sev-low:hover { background: #152040; }
+/* ── Tab Bar ── */
+.alert-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border-subtle); margin-bottom: 16px; flex-wrap: wrap; }
+.alert-tab { display: flex; align-items: center; gap: 6px; background: transparent; border: none; border-bottom: 2px solid transparent; padding: 10px 16px; font-family: var(--font-ui); font-size: var(--text-sm); color: var(--text-secondary); cursor: pointer; margin-bottom: -1px; white-space: nowrap; }
+.alert-tab:hover { color: var(--text-primary); }
+.alert-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab-count { font-family: var(--font-mono); font-size: 10px; padding: 1px 6px; border-radius: 8px; background: var(--bg-elevated); color: var(--text-muted); }
+.alert-tab.active .tab-count { background: var(--bg-selected); color: var(--accent); }
+.tab-divider { width: 1px; background: var(--border-subtle); margin: 4px 8px; align-self: stretch; }
 
-    .alert-card-header {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin-bottom: 10px;
-    }
-    .alert-card-header .alert-type {
-        font-family: var(--font-ui);
-        font-size: var(--text-sm);
-        font-weight: 500;
-        color: var(--text-primary);
-    }
-    .alert-card-header .alert-device {
-        font-family: var(--font-mono);
-        font-size: var(--text-xs);
-        color: var(--text-secondary);
-    }
-    .alert-card-header .alert-device::before {
-        content: '·';
-        margin-right: 10px;
-        color: var(--text-muted);
-    }
-    .alert-card-header .spacer {
-        flex: 1;
-    }
-    .count-badge {
-        background: var(--bg-elevated);
-        color: var(--text-secondary);
-        font-family: var(--font-mono);
-        font-size: var(--text-xs);
-        font-weight: 600;
-        padding: 2px 8px;
-        border-radius: 10px;
-        flex-shrink: 0;
-    }
-    .count-badge.count-high { color: var(--critical); background: var(--critical-bg); }
+/* ── Toolbar ── */
+.toolbar { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.toolbar-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.query-input { flex: 1; min-width: 200px; background: var(--bg-elevated); border: 1px solid var(--border-default); border-radius: 4px; padding: 6px 12px; color: var(--text-primary); font-family: var(--font-mono); font-size: var(--text-xs); }
+.query-input:focus { outline: none; border-color: var(--accent); }
+.query-input::placeholder { color: var(--text-muted); }
+.date-input { background: var(--bg-elevated); border: 1px solid var(--border-default); border-radius: 4px; padding: 6px 10px; color: var(--text-primary); font-family: var(--font-ui); font-size: var(--text-xs); }
+.date-input:focus { outline: none; border-color: var(--accent); }
 
-    .alert-card-body {
-        margin: 12px 0;
-    }
-    .alert-description {
-        font-family: var(--font-ui);
-        font-size: var(--text-sm);
-        color: var(--text-secondary);
-        line-height: 1.6;
-        margin-bottom: 8px;
-    }
-    .alert-meta {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 16px;
-        font-size: var(--text-xs);
-        color: var(--text-muted);
-    }
-    .alert-meta .meta-item {
-        display: flex;
-        align-items: center;
-        gap: 4px;
-    }
-    .alert-meta .meta-label {
-        color: var(--text-muted);
-    }
-    .alert-meta .meta-value {
-        font-family: var(--font-mono);
-        color: var(--text-secondary);
-    }
+/* ── Bulk Bar ── */
+.bulk-bar { display: none; align-items: center; gap: 12px; padding: 10px 16px; background: var(--bg-selected); border: 1px solid var(--accent); border-radius: 6px; margin-bottom: 12px; font-size: var(--text-sm); }
+.bulk-bar.visible { display: flex; }
+.bulk-count { font-weight: 600; color: var(--text-primary); }
 
-    .alert-card-footer {
-        margin-top: 12px;
-        padding-top: 12px;
-        border-top: 1px solid var(--border-subtle);
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-    }
-    .alert-timestamps {
-        display: flex;
-        gap: 16px;
-        font-family: var(--font-ui);
-        font-size: var(--text-xs);
-        color: var(--text-muted);
-    }
-    .alert-actions {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-    }
+/* ── Alert Cards ── */
+.alert-card { border-radius: 4px; padding: 14px 16px; margin-bottom: 8px; border: 1px solid var(--border-subtle); border-left: 4px solid var(--border-subtle); background: var(--bg-surface); transition: background 0.15s; }
+.alert-card:hover { background: var(--bg-elevated); }
+.alert-card.sev-critical { border-left-color: var(--critical); }
+.alert-card.sev-high { border-left-color: var(--high); }
+.alert-card.sev-medium { border-left-color: var(--medium); }
+.alert-card.sev-low { border-left-color: var(--low); }
 
-    .empty-card {
-        text-align: center;
-        padding: 48px 16px;
-        color: var(--text-muted);
-        font-size: var(--text-sm);
-    }
+.ac-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.ac-check { accent-color: var(--accent); flex-shrink: 0; }
+.ac-spacer { flex: 1; }
+.ac-host { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-secondary); }
 
-    /* ── Expand button ── */
-    .expand-btn {
-        background: var(--bg-elevated);
-        border: 1px solid var(--border-default);
-        border-radius: 3px;
-        padding: 3px 10px;
-        font-family: var(--font-ui);
-        font-size: var(--text-xs);
-        color: var(--text-secondary);
-        cursor: pointer;
-        transition: all 0.15s;
-    }
-    .expand-btn:hover {
-        background: var(--bg-selected);
-        color: var(--text-primary);
-        border-color: var(--accent);
-    }
-    .expand-btn.open {
-        color: var(--accent);
-        border-color: var(--accent);
-    }
+.status-badge { font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.05em; }
+.status-open { background: var(--bg-elevated); color: var(--text-secondary); border: 1px solid var(--border-default); }
+.status-in_response { background: var(--low-bg); color: var(--low); border: 1px solid var(--low-border); }
+.status-in_incident { background: var(--suspicious-bg); color: var(--suspicious); border: 1px solid #4c1d95; }
+.status-false_positive { background: var(--high-bg); color: var(--high); border: 1px solid var(--high-border); }
+.status-closed { background: var(--bg-elevated); color: var(--text-muted); border: 1px solid var(--border-subtle); }
 
-    /* ── Context panel (inside card) ── */
-    .alert-context-wrap {
-        margin-top: 12px;
-        display: none;
-    }
-    .alert-context-wrap.open {
-        display: block;
-    }
-    .alert-context {
-        background: var(--bg-page);
-        border-radius: 4px;
-        padding: 12px;
-    }
-    .context-loading {
-        font-family: var(--font-ui);
-        font-size: var(--text-xs);
-        color: var(--text-muted);
-        padding: 8px 0;
-    }
+.ac-body { font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: 6px; }
+.ac-type { font-weight: 500; color: var(--text-primary); margin-right: 6px; }
+.ac-bottom { display: flex; align-items: center; gap: 12px; font-size: var(--text-xs); color: var(--text-muted); flex-wrap: wrap; }
+.ac-ioc { font-family: var(--font-mono); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-    /* ── GIB-style context tree ── */
-    .context-ioc {
-        font-family: var(--font-ui);
-        font-size: var(--text-xs);
-        color: var(--text-secondary);
-        margin-bottom: 8px;
-        padding-bottom: 8px;
-        border-bottom: 1px solid var(--border-subtle);
-    }
-    .context-tree {
-        display: flex;
-        flex-direction: column;
-        gap: 1px;
-    }
-    .ctx-row {
-        display: flex;
-        align-items: center;
-        min-height: 28px;
-        border-radius: 3px;
-        overflow: hidden;
-    }
-    .ctx-bar {
-        width: 3px;
-        min-height: 28px;
-        flex-shrink: 0;
-        background: transparent;
-        margin-right: 8px;
-    }
-    .ctx-bar.bar-critical { background: var(--critical); }
-    .ctx-bar.bar-lolbin { background: var(--lolbin); }
-    .ctx-row.ctx-flagged { background: var(--critical-bg); }
-    .ctx-row.ctx-suspicious { background: var(--critical-bg); }
-    .ctx-row.ctx-lolbin { background: var(--lolbin-bg); }
-    .ctx-row:hover { background: var(--bg-elevated); }
-    .ctx-row.ctx-flagged:hover { background: #3a1a1a; }
-    .ctx-row.ctx-lolbin:hover { background: #3a2010; }
-    .ctx-content {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        flex: 1;
-        padding: 4px 8px;
-        gap: 8px;
-        overflow: hidden;
-    }
-    .ctx-main {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        overflow: hidden;
-        flex: 1;
-    }
-    .ctx-connector {
-        font-family: var(--font-mono);
-        font-size: var(--text-xs);
-        color: var(--border-bright);
-        flex-shrink: 0;
-    }
-    .ctx-pid {
-        font-family: var(--font-mono);
-        font-size: 11px;
-        color: #f59e0b;
-        flex-shrink: 0;
-        min-width: 42px;
-    }
-    .ctx-name {
-        font-family: var(--font-ui);
-        font-size: var(--text-sm);
-        font-weight: 500;
-        color: var(--text-primary);
-        white-space: nowrap;
-    }
-    .ctx-name.suspicious { color: var(--critical); }
-    .ctx-name.lolbin { color: var(--lolbin); }
-    .ctx-cmd {
-        font-family: var(--font-mono);
-        font-size: 11px;
-        color: var(--text-muted);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        max-width: 400px;
-    }
-    .ctx-alert-badge {
-        font-size: 14px;
-        flex-shrink: 0;
-        color: var(--critical);
-    }
+/* ── Actions Menu ── */
+.actions-menu-wrap { position: relative; }
+.actions-trigger { background: none; border: 1px solid var(--border-default); border-radius: 3px; color: var(--text-muted); cursor: pointer; padding: 2px 6px; font-size: var(--text-xs); }
+.actions-trigger:hover { color: var(--text-primary); border-color: var(--border-bright); }
+.actions-dropdown { display: none; position: absolute; right: 0; top: 100%; background: var(--bg-elevated); border: 1px solid var(--border-default); border-radius: 6px; z-index: 50; min-width: 180px; padding: 4px 0; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+.actions-dropdown.open { display: block; }
+.actions-dropdown button { display: block; width: 100%; text-align: left; background: none; border: none; padding: 8px 14px; font-family: var(--font-ui); font-size: var(--text-sm); color: var(--text-secondary); cursor: pointer; }
+.actions-dropdown button:hover { background: var(--bg-selected); color: var(--text-primary); }
 
-    /* ── Tooltips ── */
-    .help-tip {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 16px;
-        height: 16px;
-        border-radius: 50%;
-        background: var(--bg-elevated);
-        border: 1px solid var(--border-default);
-        font-size: 10px;
-        color: var(--text-muted);
-        cursor: help;
-        position: relative;
-        vertical-align: middle;
-        margin-left: 4px;
-        flex-shrink: 0;
-    }
-    .help-tip:hover { color: var(--text-secondary); border-color: var(--border-bright); }
-    .help-tip::after {
-        content: attr(data-tip);
-        position: absolute;
-        bottom: calc(100% + 8px);
-        left: 50%;
-        transform: translateX(-50%);
-        background: var(--bg-elevated);
-        border: 1px solid var(--border-bright);
-        border-radius: 4px;
-        padding: 8px 10px;
-        font-family: var(--font-ui);
-        font-size: var(--text-xs);
-        font-weight: 400;
-        color: var(--text-secondary);
-        line-height: 1.5;
-        white-space: normal;
-        width: 260px;
-        max-width: 260px;
-        z-index: 100;
-        pointer-events: none;
-        opacity: 0;
-        transition: opacity 0.15s;
-        text-transform: none;
-        letter-spacing: normal;
-    }
-    .help-tip:hover::after { opacity: 1; }
+/* ── FP Modal ── */
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
+.modal-overlay.open { display: flex; }
+.modal-box { background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: 8px; padding: 24px; width: 420px; max-width: 90vw; }
+.modal-title { font-size: var(--text-lg); font-weight: 600; margin-bottom: 12px; }
+.modal-text { font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: 16px; }
+.modal-textarea { width: 100%; min-height: 80px; background: var(--bg-elevated); border: 1px solid var(--border-default); border-radius: 4px; padding: 8px; color: var(--text-primary); font-family: var(--font-ui); font-size: var(--text-sm); resize: vertical; }
+.modal-textarea:focus { outline: none; border-color: var(--accent); }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
+.count-pill { background: var(--bg-elevated); padding: 2px 8px; border-radius: 3px; color: var(--text-secondary); font-family: var(--font-mono); font-size: 10px; font-weight: 600; }
+.count-pill.high { color: var(--critical); background: var(--critical-bg); }
+
+.load-more-wrap { padding: 12px; text-align: center; }
 {% endblock %}
 
 {% block content %}
-<h1 class="page-header">Security Alerts</h1>
+<h1 class="page-header">Alerts</h1>
 
-<div class="card">
-    <div class="card-header">
-        <span>Alert List</span>
-        <button class="btn btn-sm" onclick="location.reload()">Refresh</button>
+<!-- Tab Bar -->
+<div class="alert-tabs" id="alertTabs">
+    <button class="alert-tab active" data-status="open">New <span class="tab-count" id="cnt-open">0</span></button>
+    <button class="alert-tab" data-status="in_response">In Response <span class="tab-count" id="cnt-in_response">0</span></button>
+    <button class="alert-tab" data-status="in_incident">With Incident <span class="tab-count" id="cnt-in_incident">0</span></button>
+    <button class="alert-tab" data-status="false_positive">False Positive <span class="tab-count" id="cnt-false_positive">0</span></button>
+    <button class="alert-tab" data-status="closed">Closed <span class="tab-count" id="cnt-closed">0</span></button>
+    <div class="tab-divider"></div>
+    <button class="alert-tab" data-status="all">All <span class="tab-count" id="cnt-all">0</span></button>
+    <div style="margin-left:auto">
+        <label style="display:flex;align-items:center;gap:6px;font-size:var(--text-xs);color:var(--text-secondary);cursor:pointer">
+            <input type="checkbox" id="autoRefresh" checked style="accent-color:var(--accent)"> Auto-refresh
+        </label>
     </div>
-    <div class="card-body">
-        <div class="alerts-list">
-            {% for alert in alerts %}
-            <div class="alert-card sev-{{ alert.severity|lower }}">
-                <!-- Header: severity badge, type, device, count -->
-                <div class="alert-card-header">
-                    <span class="badge badge-{{ alert.severity|lower }}">{{ alert.severity }}</span><span class="help-tip" data-tip="Severity indicates how dangerous the detected activity is. CRITICAL = known malware or attacker tool. HIGH = likely malicious pattern. MEDIUM = suspicious but unconfirmed. LOW = informational only.">i</span>
-                    <span class="alert-type">{{ alert.type }}</span>
-                    <span class="alert-device">{{ alert.client.hostname }}</span>
-                    <span class="spacer"></span>
-                    {% if alert.event_count > 1 %}
-                        <span class="count-badge {% if alert.event_count > 10 %}count-high{% endif %}">{{ alert.event_count }}&times;</span>
-                    {% endif %}
-                </div>
+</div>
 
-                <!-- Body: description, process, IoC -->
-                <div class="alert-card-body">
-                    <div class="alert-description">{{ alert.description }}</div>
-                    <div class="alert-meta">
-                        {% if alert.process_name %}
-                        <span class="meta-item">
-                            <span class="meta-label">Process:</span>
-                            <span class="meta-value">{{ alert.process_name }}{% if alert.process_id %} (PID {{ alert.process_id }}){% endif %}</span>
-                        </span>
-                        {% endif %}
-                        {% if alert.ioc_matched %}
-                        <span class="meta-item">
-                            <span class="meta-label">IoC:<span class="help-tip" data-tip="IOC = Indicator of Compromise. This shows which specific threat indicator (IP address or file hash) was matched. Click the value to copy.">i</span></span>
-                            <span class="meta-value" style="cursor:pointer" onclick="copyHash('{{ alert.ioc_matched }}')">{{ alert.ioc_matched|truncatechars:40 }}</span>
-                        </span>
-                        {% endif %}
-                    </div>
-                </div>
+<!-- Toolbar -->
+<div class="toolbar">
+    <div class="toolbar-row">
+        <input type="text" id="queryInput" class="query-input" placeholder="severity:CRITICAL AND status:open  |  host:PC-01  |  ioc:185.x.x.x">
+        <button class="btn btn-primary" id="searchBtn" style="white-space:nowrap">Search</button>
+        <button class="btn" id="clearBtn">Clear</button>
+    </div>
+    <div class="toolbar-row">
+        <input type="date" id="dateFrom" class="date-input" title="From date">
+        <input type="date" id="dateTo" class="date-input" title="To date">
+        <button class="btn" id="exportCsvBtn" style="white-space:nowrap">Export CSV</button>
+    </div>
+</div>
 
-                <!-- Footer: timestamps + actions -->
-                <div class="alert-card-footer">
-                    <div class="alert-timestamps">
-                        <span>First: <span data-iso="{{ alert.timestamp|date:'c' }}">{{ alert.timestamp|date:"Y-m-d H:i" }}</span></span>
-                        <span>Last: <span data-iso="{{ alert.last_seen|date:'c' }}">{{ alert.last_seen|date:"Y-m-d H:i" }}</span></span>
-                    </div>
-                    <div class="alert-actions">
-                        <a href="{% url 'alert_detail' alert.id %}" class="btn btn-sm btn-primary">Investigate</a>
-                        {% if alert.process_id %}
-                        <button class="expand-btn" onclick="toggleContext(this, {{ alert.id }})" title="Show process chain">&#9654; Chain</button>
-                        {% endif %}
-                    </div>
-                </div>
+<!-- Bulk Bar -->
+<div class="bulk-bar" id="bulkBar">
+    <span class="bulk-count" id="bulkCount">0 selected</span>
+    <button class="btn" onclick="bulkAction('in_response')">Mark In Response</button>
+    <button class="btn" onclick="openBulkFPModal()">Mark False Positive</button>
+    <button class="btn" onclick="bulkAction('close')">Close</button>
+    <button class="btn" id="bulkCancel">Cancel</button>
+</div>
 
-                <!-- Expandable chain context -->
-                {% if alert.process_id %}
-                <div class="alert-context-wrap" id="context-wrap-{{ alert.id }}">
-                    <div class="alert-context" id="context-{{ alert.id }}">
-                        <div class="context-loading">Loading chain...</div>
-                    </div>
-                </div>
-                {% endif %}
-            </div>
-            {% empty %}
-            <div class="empty-card">No alerts found</div>
-            {% endfor %}
+<!-- Alert Cards -->
+<div id="alertsList"></div>
+<div id="loadMoreWrap" class="load-more-wrap" style="display:none">
+    <button class="btn" id="loadMoreBtn">Load more</button>
+</div>
+
+<!-- FP Modal -->
+<div class="modal-overlay" id="fpModal">
+    <div class="modal-box">
+        <div class="modal-title">Mark as False Positive</div>
+        <div class="modal-text">Explain why this is a false positive. This helps improve detection accuracy.</div>
+        <textarea class="modal-textarea" id="fpReason" placeholder="e.g. Legitimate admin tool used by IT team for maintenance"></textarea>
+        <div class="modal-actions">
+            <button class="btn" id="fpCancel">Cancel</button>
+            <button class="btn btn-primary" id="fpConfirm">Confirm False Positive</button>
         </div>
     </div>
 </div>
@@ -394,115 +140,237 @@
 
 {% block extra_js %}
 <script>
-var contextCache = {};
+var currentTab = 'open';
+var currentPage = 1;
+var selectedIds = new Set();
+var fpTargetId = null;
+var fpBulkMode = false;
+var openMenuId = null;
 
-function toggleContext(btn, alertId) {
-    var wrap = document.getElementById('context-wrap-' + alertId);
-    var panel = document.getElementById('context-' + alertId);
-
-    if (wrap.classList.contains('open')) {
-        wrap.classList.remove('open');
-        btn.innerHTML = '&#9654; Chain';
-        btn.classList.remove('open');
-        return;
-    }
-
-    wrap.classList.add('open');
-    btn.innerHTML = '&#9660; Chain';
-    btn.classList.add('open');
-
-    if (contextCache[alertId]) {
-        panel.innerHTML = renderContextTree(contextCache[alertId]);
-        return;
-    }
-
-    fetch('/api/alerts/' + alertId + '/context/')
+function loadTabCounts() {
+    fetch('/api/alerts/counts/', { credentials: 'same-origin' })
         .then(function(r) { return r.json(); })
-        .then(function(data) {
-            contextCache[alertId] = data;
-            panel.innerHTML = renderContextTree(data);
-        })
-        .catch(function() {
-            panel.innerHTML = '<div class="context-loading">Failed to load chain.</div>';
+        .then(function(d) {
+            ['open','in_response','in_incident','false_positive','closed','all'].forEach(function(s) {
+                var el = document.getElementById('cnt-' + s);
+                if (el) el.textContent = d[s] || 0;
+            });
+        }).catch(function() {});
+}
+
+function loadAlerts(append) {
+    var params = new URLSearchParams({ status: currentTab, page: currentPage });
+    var q = document.getElementById('queryInput').value.trim();
+    if (q) params.set('query', q);
+    var df = document.getElementById('dateFrom').value;
+    var dt = document.getElementById('dateTo').value;
+    if (df) params.set('date_from', df);
+    if (dt) params.set('date_to', dt);
+
+    fetch('/alerts/?' + params.toString(), {
+        credentials: 'same-origin',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        renderAlerts(data, append);
+    })
+    .catch(function() {
+        if (!append) document.getElementById('alertsList').innerHTML = '<div class="empty-state">Failed to load alerts.</div>';
+    });
+}
+
+function renderAlerts(data, append) {
+    var container = document.getElementById('alertsList');
+    if (!append) container.innerHTML = '';
+
+    if (!data.alerts.length && !append) {
+        container.innerHTML = '<div class="empty-state" style="padding:48px">No alerts in this category.</div>';
+        document.getElementById('loadMoreWrap').style.display = 'none';
+        return;
+    }
+
+    data.alerts.forEach(function(a) {
+        var card = document.createElement('div');
+        card.className = 'alert-card sev-' + a.severity.toLowerCase();
+        card.id = 'alert-card-' + a.id;
+
+        var statusLabel = {open:'New', in_response:'In Response', in_incident:'Incident', false_positive:'FP', closed:'Closed'};
+        var countHtml = a.event_count > 1 ? '<span class="count-pill' + (a.event_count > 10 ? ' high' : '') + '">' + a.event_count + '&times;</span>' : '';
+
+        card.innerHTML =
+            '<div class="ac-top">' +
+                '<input type="checkbox" class="ac-check" data-id="' + a.id + '"' + (selectedIds.has(a.id) ? ' checked' : '') + '>' +
+                '<span class="badge badge-' + a.severity.toLowerCase() + '">' + a.severity + '</span>' +
+                '<span class="status-badge status-' + a.status + '">' + (statusLabel[a.status] || a.status) + '</span>' +
+                countHtml +
+                '<span class="ac-host">' + esc(a.hostname) + '</span>' +
+                '<span class="ac-spacer"></span>' +
+                buildActionsMenu(a) +
+            '</div>' +
+            '<div class="ac-body"><span class="ac-type">' + esc(a.type) + '</span>' + esc(a.description) + '</div>' +
+            '<div class="ac-bottom">' +
+                (a.ioc_matched ? '<span class="ac-ioc" title="' + esc(a.ioc_matched) + '">' + esc(a.ioc_matched) + '</span>' : '') +
+                '<span>First: <span data-iso="' + (a.timestamp || '') + '">' + (a.timestamp ? timeAgo(a.timestamp) : '') + '</span></span>' +
+                '<span>Last: <span data-iso="' + (a.last_seen || '') + '">' + (a.last_seen ? timeAgo(a.last_seen) : '') + '</span></span>' +
+            '</div>';
+
+        container.appendChild(card);
+    });
+
+    // Bind checkboxes
+    container.querySelectorAll('.ac-check').forEach(function(cb) {
+        cb.addEventListener('change', function() {
+            var id = parseInt(this.dataset.id);
+            if (this.checked) selectedIds.add(id); else selectedIds.delete(id);
+            updateBulkBar();
         });
+    });
+
+    document.getElementById('loadMoreWrap').style.display = data.has_more ? '' : 'none';
+    applyTimeAgo();
 }
 
-function renderContextTree(data) {
-    if (!data.processes || data.processes.length === 0) {
-        return '<div class="context-loading">No process data available for this alert.</div>';
+function buildActionsMenu(a) {
+    var items = '<button onclick="window.location=\'/alerts/' + a.id + '/\'">Investigate &rarr;</button>';
+    if (a.status === 'open' || a.status === 'in_response') {
+        if (a.status === 'open') items += '<button onclick="doAction(' + a.id + ',\'in_response\')">Mark In Response</button>';
+        items += '<button onclick="openFPModal(' + a.id + ')">Mark False Positive</button>';
+        items += '<button onclick="doAction(' + a.id + ',\'close\')">Close</button>';
     }
-
-    var map = {};
-    var roots = [];
-    data.processes.forEach(function(p) {
-        map[p.pid] = { pid: p.pid, parent_pid: p.parent_pid, name: p.name, flagged: p.flagged, lolbin: p.lolbin, suspicious: p.suspicious, hash_short: p.hash_short, hash_full: p.hash_full, path: p.path, cmd: p.cmd, children: [] };
-    });
-    data.processes.forEach(function(p) {
-        if (p.parent_pid && map[p.parent_pid]) {
-            map[p.parent_pid].children.push(map[p.pid]);
-        } else {
-            roots.push(map[p.pid]);
-        }
-    });
-
-    var html = '';
-    if (data.ioc) {
-        html += '<div class="context-ioc">IOC matched: <span class="mono">' + escapeCtx(data.ioc) + '</span></div>';
+    if (a.status === 'false_positive' || a.status === 'closed') {
+        items += '<button onclick="doAction(' + a.id + ',\'reopen\')">Reopen</button>';
     }
-    html += '<div class="context-tree">';
-    html += renderContextNodes(roots, 0, data.flagged_pid);
-    html += '</div>';
-    return html;
+    return '<div class="actions-menu-wrap"><button class="actions-trigger" onclick="toggleMenu(event,' + a.id + ')">&#8942;</button><div class="actions-dropdown" id="menu-' + a.id + '">' + items + '</div></div>';
 }
 
-function renderContextNodes(nodes, depth, flaggedPid) {
-    var html = '';
-    nodes.forEach(function(node, i) {
-        var isLast = i === nodes.length - 1;
-        var isFlagged = node.pid === flaggedPid;
-        var indent = depth * 20;
+function toggleMenu(e, id) {
+    e.stopPropagation();
+    var menu = document.getElementById('menu-' + id);
+    var wasOpen = menu.classList.contains('open');
+    closeAllMenus();
+    if (!wasOpen) menu.classList.add('open');
+}
 
-        var rowClass = 'ctx-row';
-        if (isFlagged) rowClass += ' ctx-flagged';
-        else if (node.suspicious) rowClass += ' ctx-suspicious';
-        else if (node.lolbin) rowClass += ' ctx-lolbin';
+function closeAllMenus() {
+    document.querySelectorAll('.actions-dropdown.open').forEach(function(m) { m.classList.remove('open'); });
+}
+document.addEventListener('click', closeAllMenus);
 
-        var barClass = 'ctx-bar';
-        if (node.suspicious || isFlagged) barClass += ' bar-critical';
-        else if (node.lolbin) barClass += ' bar-lolbin';
-
-        var connector = depth === 0 ? '' : '<span class="ctx-connector">' + (isLast ? '\u2514' : '\u251C') + '</span>';
-        var pid = '<span class="ctx-pid">' + node.pid + '</span>';
-
-        var nameClass = (node.suspicious || isFlagged) ? 'ctx-name suspicious' : node.lolbin ? 'ctx-name lolbin' : 'ctx-name';
-        var name = '<span class="' + nameClass + '">' + escapeCtx(node.name) + '</span>';
-
-        var cmd = node.cmd ? '<span class="ctx-cmd">' + escapeCtx(node.cmd) + '</span>' : '';
-
-        var hashHtml = '';
-        if (isFlagged && node.hash_short) {
-            hashHtml = '<span class="hash" onclick="copyHash(\'' + node.hash_full + '\')" title="' + node.hash_full + '">' + node.hash_short + '...</span>';
+function doAction(alertId, action, reason) {
+    var body = { action: action };
+    if (reason) body.reason = reason;
+    fetch('/api/alerts/' + alertId + '/action/', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRF() },
+        body: JSON.stringify(body),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { showToast(d.error); return; }
+        showToast('Alert updated: ' + d.status);
+        if (d.suggest_exclusion) {
+            if (confirm('Create exclusion rule for "' + d.process_name + '" to prevent future alerts?')) {
+                window.location = '/ioc-manager/';
+            }
         }
+        loadAlerts(false);
+        loadTabCounts();
+    })
+    .catch(function() { showToast('Action failed'); });
+}
 
-        var alertBadge = isFlagged ? '<span class="ctx-alert-badge">\u26A0</span>' : '';
+function updateBulkBar() {
+    var bar = document.getElementById('bulkBar');
+    var count = selectedIds.size;
+    document.getElementById('bulkCount').textContent = count + ' selected';
+    bar.classList.toggle('visible', count > 0);
+}
 
-        html += '<div class="' + rowClass + '" style="padding-left:' + indent + 'px">'
-            + '<div class="' + barClass + '"></div>'
-            + '<div class="ctx-content"><div class="ctx-main">'
-            + connector + pid + name + cmd + hashHtml
-            + '</div>' + alertBadge + '</div></div>';
+function bulkAction(action, reason) {
+    fetch('/api/alerts/bulk-action/', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRF() },
+        body: JSON.stringify({ alert_ids: Array.from(selectedIds), action: action, reason: reason || '' }),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        showToast('Updated ' + d.updated + ' alerts' + (d.errors.length ? ', ' + d.errors.length + ' errors' : ''));
+        selectedIds.clear();
+        updateBulkBar();
+        loadAlerts(false);
+        loadTabCounts();
+    })
+    .catch(function() { showToast('Bulk action failed'); });
+}
 
-        if (node.children && node.children.length > 0) {
-            html += renderContextNodes(node.children, depth + 1, flaggedPid);
-        }
+/* ── FP Modal ── */
+function openFPModal(id) {
+    fpTargetId = id;
+    fpBulkMode = false;
+    document.getElementById('fpReason').value = '';
+    document.getElementById('fpModal').classList.add('open');
+}
+function openBulkFPModal() {
+    fpBulkMode = true;
+    document.getElementById('fpReason').value = '';
+    document.getElementById('fpModal').classList.add('open');
+}
+document.getElementById('fpCancel').addEventListener('click', function() {
+    document.getElementById('fpModal').classList.remove('open');
+});
+document.getElementById('fpConfirm').addEventListener('click', function() {
+    var reason = document.getElementById('fpReason').value.trim();
+    if (!reason) { showToast('Reason is required'); return; }
+    document.getElementById('fpModal').classList.remove('open');
+    if (fpBulkMode) { bulkAction('false_positive', reason); }
+    else { doAction(fpTargetId, 'false_positive', reason); }
+});
+
+/* ── Tab switching ── */
+document.querySelectorAll('.alert-tab').forEach(function(tab) {
+    tab.addEventListener('click', function() {
+        document.querySelectorAll('.alert-tab').forEach(function(t) { t.classList.remove('active'); });
+        tab.classList.add('active');
+        currentTab = tab.dataset.status;
+        currentPage = 1;
+        selectedIds.clear();
+        updateBulkBar();
+        loadAlerts(false);
     });
-    return html;
-}
+});
 
-function escapeCtx(str) {
-    var d = document.createElement('div');
-    d.textContent = str;
-    return d.innerHTML;
-}
+/* ── Search/filter ── */
+document.getElementById('searchBtn').addEventListener('click', function() { currentPage = 1; loadAlerts(false); });
+document.getElementById('clearBtn').addEventListener('click', function() {
+    document.getElementById('queryInput').value = '';
+    document.getElementById('dateFrom').value = '';
+    document.getElementById('dateTo').value = '';
+    currentPage = 1; loadAlerts(false);
+});
+document.getElementById('queryInput').addEventListener('keydown', function(e) { if (e.key === 'Enter') { currentPage = 1; loadAlerts(false); } });
+document.getElementById('bulkCancel').addEventListener('click', function() {
+    selectedIds.clear(); updateBulkBar();
+    document.querySelectorAll('.ac-check').forEach(function(c) { c.checked = false; });
+});
+document.getElementById('loadMoreBtn').addEventListener('click', function() { currentPage++; loadAlerts(true); });
+
+/* ── Export CSV ── */
+document.getElementById('exportCsvBtn').addEventListener('click', function() {
+    showToast('CSV export coming in next session');
+});
+
+/* ── Auto-refresh ── */
+var refreshTimer = setInterval(function() {
+    if (!document.getElementById('autoRefresh').checked) return;
+    loadTabCounts();
+    if (currentTab === 'open' || currentTab === 'in_response') loadAlerts(false);
+}, 30000);
+
+function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+/* ── Initial load ── */
+loadTabCounts();
+loadAlerts(false);
 </script>
 {% endblock %}
