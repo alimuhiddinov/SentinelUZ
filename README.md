@@ -16,14 +16,14 @@ Westminster International University in Tashkent (WIUT).
 ## What it does
 
 Every SentinelUZ agent runs silently on a Windows endpoint and
-reports back to the central server every few seconds. The server
+reports back to the central server every 30 seconds. The server
 analyses the telemetry, matches it against a threat intelligence
 database, and raises alerts when something looks wrong.
 
-A security analyst logs into the web dashboard, reviews the alerts,
+An analyst logs into the web dashboard, reviews the alerts,
 investigates the timeline of events on any affected endpoint, and
-takes action — isolating the machine, adding an exclusion, or
-marking the alert as a false positive.
+takes action — adding an exclusion or marking the alert as a
+false positive.
 
 ---
 
@@ -31,12 +31,12 @@ marking the alert as a false positive.
 
 | Detection type | Description |
 |---|---|
-| Hash match | SHA-256 of running processes checked against 264,109 known malware hashes |
-| Known attack tools | 16 offensive tools detected by name: Mimikatz, Cobalt Strike, BloodHound, PsExec, and others |
-| Suspicious process chain | 8 parent-child process pairs flagged: Word spawning cmd, PowerShell spawning net, and similar |
-| LOLBin abuse | Living-off-the-land binaries used maliciously: certutil, mshta, regsvr32, wscript |
-| Network anomaly | Beacon-like outbound connections, connections to known malicious IPs |
-| Delta scoring | Cumulative risk score per endpoint — alert fires when score crosses threshold |
+| Hash match | SHA-256 of running processes checked against MalwareBazaar and ThreatFox threat intel feeds |
+| Known attack tools | 16 offensive tools detected by name: Mimikatz, Cobalt Strike, BloodHound, PsExec, Rubeus, and others |
+| Suspicious process chain | 8 suspicious parents (Word, Excel, Outlook, browsers) spawning any of 17 LOLBins triggers an alert |
+| LOLBin abuse | 17 living-off-the-land binaries: cmd, powershell, certutil, mshta, regsvr32, rundll32, wscript, and others |
+| Malicious IP match | Outbound connections checked against IPsum, Feodo Tracker, and ThreatFox IP blacklists |
+| Alert deduplication | Matching alerts within a 3-day window are grouped and increment an event counter instead of creating duplicates |
 
 ---
 
@@ -54,12 +54,12 @@ SentinelUZ Agent    ───►  REST API  ──►  PostgreSQL
 ├─ file hashes          │
 └─ system events        ▼
                         Web Dashboard
-                        (Admin / Analyst / Viewer)
+                        (Owner / IT Manager)
 ```
 
 **Agent:** C++ Windows service, runs as SYSTEM, reports every 30 seconds
-**Server:** Django 4.2, PostgreSQL 15, Redis + Celery, Docker Compose
-**Dashboard:** Role-based web UI — Admin, Analyst, Viewer
+**Server:** Django 4.2, PostgreSQL 15, Docker Compose
+**Dashboard:** Role-based web UI — Owner and IT Manager
 
 ---
 
@@ -68,12 +68,11 @@ SentinelUZ Agent    ───►  REST API  ──►  PostgreSQL
 | Component | Technology |
 |---|---|
 | Agent | C++17, Windows API, WinHTTP |
-| Backend | Python 3.12, Django 4.2, Django REST Framework |
+| Backend | Python 3.11, Django 4.2, Django REST Framework |
 | Database | PostgreSQL 15 |
-| Task queue | Redis 7 + Celery 5 |
-| Threat intel | MalwareBazaar (264,109 hashes), 16 LOLBin signatures |
+| Threat intel | MalwareBazaar, ThreatFox, IPsum, Feodo Tracker |
 | Frontend | Django templates, vanilla JS |
-| Deployment | Docker Compose (4 containers) |
+| Deployment | Docker Compose (2 containers: Django + PostgreSQL) |
 
 ---
 
@@ -88,22 +87,22 @@ SentinelUZ Agent    ───►  REST API  ──►  PostgreSQL
 ```bash
 git clone https://github.com/alimuhiddinov/SentinelUZ.git
 cd SentinelUZ
-cp .env.example .env
-# Edit .env with your values
+cp edr_server/.env.example edr_server/.env
+# Edit edr_server/.env with your values
 ```
 
 ### 2. Start the server
 
 ```bash
 docker compose up --build -d
-docker compose exec edr_server python manage.py migrate
-docker compose exec edr_server python manage.py createsuperuser
+docker compose exec django python manage.py migrate
+docker compose exec django python manage.py createsuperuser
 ```
 
 ### 3. Load threat intelligence
 
 ```bash
-docker compose exec edr_server python manage.py update_ti_feeds
+docker compose exec django python manage.py sync_ti_feeds
 ```
 
 ### 4. Open dashboard
@@ -111,9 +110,17 @@ http://localhost:8000
 
 ### 5. Install agent on Windows endpoint
 
-Build the agent or download from Releases, then run as Administrator:
+Build the agent with CMake (MinGW-w64), then configure `config.ini` with the server URL and auth token:
+
+```ini
+[server]
+url=http://your-server-ip:8000
+token=your-auth-token
 ```
-SentinelUZAgent.exe --server http://your-server-ip:8000 --install
+
+Install as a Windows service (run as Administrator):
+```
+edr_client.exe --install
 ```
 
 The agent installs as a Windows service and starts automatically.
@@ -122,16 +129,17 @@ The agent installs as a Windows service and starts automatically.
 
 ## User roles
 
-| Permission | Admin | Analyst | Viewer |
-|---|:---:|:---:|:---:|
-| View dashboard and alerts | ✅ | ✅ | ✅ |
-| View endpoint events | ✅ | ✅ | ✅ |
-| Acknowledge alerts | ✅ | ✅ | ❌ |
-| Mark false positive | ✅ | ✅ | ❌ |
-| Add exclusions | ✅ | ❌ | ❌ |
-| Manage endpoints | ✅ | ❌ | ❌ |
-| Manage users | ✅ | ❌ | ❌ |
-| View threat intel database | ✅ | ✅ | ❌ |
+| Permission | Owner | IT Manager |
+|---|:---:|:---:|
+| View dashboard and alerts | ✅ | ✅ |
+| View endpoint events | ✅ | ✅ |
+| Acknowledge alerts | ✅ | ✅ |
+| Add exclusions | ✅ | ✅ |
+| Manage IoC rules | ✅ | ✅ |
+| Manage company and users | ✅ | ❌ |
+| Sync threat intel feeds | ✅ | ❌ |
+
+Owner = staff or superuser. IT Manager = any other authenticated user.
 
 ---
 
@@ -139,21 +147,27 @@ The agent installs as a Windows service and starts automatically.
 
 ```
 SentinelUZ/
-├── edr_server/          # Django backend
-│   ├── alerts/          # Alert models, views, scoring engine
-│   ├── endpoints/       # Endpoint registration and management
-│   ├── events/          # Process, network, file event ingestion
-│   ├── threat_intel/    # TI database and feed sync
-│   ├── accounts/        # User auth and roles
-│   └── owner/           # Company and licence management
-├── edr_client/          # C++ Windows agent
+├── edr_server/              # Django backend
+│   ├── edr_app/             # Main application
+│   │   ├── models.py        # 19 models (endpoints, alerts, TI, incidents)
+│   │   ├── views.py         # API endpoints + dashboard views
+│   │   ├── utils.py         # IoC matching, alert engine
+│   │   ├── urls.py          # URL routing
+│   │   ├── templates/       # Dashboard HTML templates
+│   │   └── management/      # sync_ti_feeds, cleanup_old_data
+│   ├── edr_server/          # Django project settings
+│   └── Dockerfile
+├── edr_client/              # C++ Windows agent
 │   ├── src/
-│   │   ├── collector/   # Process, network, file collectors
-│   │   ├── reporter/    # HTTP reporting to server
-│   │   └── service/     # Windows service wrapper
+│   │   ├── main.cpp         # Entry point, service modes
+│   │   ├── process_scanner.cpp   # Process enumeration, SHA-256, LOLBin detection
+│   │   ├── port_scanner.cpp      # Network connection enumeration
+│   │   ├── network_client.cpp    # HTTP reporting to server
+│   │   ├── config_reader.cpp     # INI configuration parser
+│   │   └── service_manager.cpp   # Windows service lifecycle
 │   └── CMakeLists.txt
 ├── docker-compose.yml
-└── .env.example
+└── edr_server/.env.example
 ```
 
 ---
@@ -174,17 +188,16 @@ SentinelUZ/
 - ML-based anomaly detection
 - MITRE ATT&CK technique tagging on alerts
 - Multi-tenant SaaS architecture
-- Mobile push notifications
 
 ---
 
 ## Testing
 
 ```bash
-docker compose exec edr_server python manage.py test --verbosity=2
+docker compose exec django python manage.py test --verbosity=2
 ```
 
-111 tests · 16 models · 20 migrations
+111 tests · 19 models · 20 migrations
 
 ---
 
