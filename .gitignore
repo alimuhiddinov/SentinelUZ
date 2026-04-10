@@ -93,3 +93,6 @@ Thumbs.db
 CLAUDE.md
 .claude/
 basic_scaner.py
+
+# Documentation (local only)
+docs/
