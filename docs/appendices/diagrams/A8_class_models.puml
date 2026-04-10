@@ -1,0 +1,110 @@
+@startuml A8_class_models
+skinparam backgroundColor #FFFFFF
+skinparam class {
+  BackgroundColor #F8FAFC
+  BorderColor #1E3A5F
+  HeaderBackgroundColor #EFF6FF
+  FontColor #1E293B
+}
+title SentinelUZ — Core Data Model (16 Models)
+
+class User {
+  +id: AutoField
+  +username: CharField
+  +email: EmailField
+  +role: CharField
+  ADMIN | ANALYST | VIEWER
+}
+
+class Company {
+  +id: AutoField
+  +name: CharField
+  +owner: ForeignKey(User)
+  +created_at: DateTimeField
+}
+
+class Licence {
+  +id: AutoField
+  +company: ForeignKey(Company)
+  +max_endpoints: IntegerField
+  +valid_until: DateField
+  +is_active: BooleanField
+}
+
+class Endpoint {
+  +id: AutoField
+  +hostname: CharField
+  +ip_address: GenericIPAddressField
+  +os_version: CharField
+  +agent_version: CharField
+  +status: CharField
+  ONLINE | OFFLINE | QUARANTINED
+  +last_seen: DateTimeField
+}
+
+class Alert {
+  +id: AutoField
+  +endpoint: ForeignKey(Endpoint)
+  +severity: CharField
+  CRITICAL | HIGH | MEDIUM | LOW
+  +delta_score: IntegerField
+  +status: CharField
+  OPEN | ACKNOWLEDGED | FP | RESOLVED
+  +detection_types: JSONField
+  +created_at: DateTimeField
+}
+
+class Event {
+  +id: AutoField
+  +endpoint: ForeignKey(Endpoint)
+  +alert: ForeignKey(Alert)
+  +event_type: CharField
+  PROCESS | NETWORK | FILE
+  +process_name: CharField
+  +process_hash: CharField
+  +timestamp: DateTimeField
+}
+
+class IOCMatch {
+  +id: AutoField
+  +alert: ForeignKey(Alert)
+  +ioc_type: CharField
+  +ioc_value: CharField
+  +matched_rule: CharField
+  +severity: CharField
+}
+
+class Incident {
+  +id: AutoField
+  +title: CharField
+  +status: CharField
+  +assigned_to: ForeignKey(User)
+  +created_at: DateTimeField
+}
+
+class Exclusion {
+  +id: AutoField
+  +rule_type: CharField
+  +value: CharField
+  +added_by: ForeignKey(User)
+  +is_active: BooleanField
+}
+
+class ThreatIntelHash {
+  +id: AutoField
+  +sha256: CharField
+  +malware_family: CharField
+  +source: CharField
+  +severity: CharField
+}
+
+Company "1" --> "1" User : owned by
+Licence "1" --> "1" Company : for
+Endpoint "0..*" --> "1" Company : belongs to
+Alert "0..*" --> "1" Endpoint : raised on
+Event "0..*" --> "0..1" Alert : linked to
+Event "0..*" --> "1" Endpoint : from
+IOCMatch "0..*" --> "1" Alert : found in
+Incident "0..*" --> "0..*" Alert : contains
+Exclusion "0..*" --> "1" User : created by
+@enduml

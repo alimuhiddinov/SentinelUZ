@@ -1,0 +1,63 @@
+@startuml A7_deployment_architecture
+skinparam backgroundColor #FFFFFF
+skinparam node {
+  BackgroundColor #EFF6FF
+  BorderColor #1E3A5F
+  FontColor #1E293B
+}
+skinparam component {
+  BackgroundColor #F8FAFC
+  BorderColor #CBD5E1
+}
+skinparam database {
+  BackgroundColor #F0FDF4
+  BorderColor #166534
+}
+title SentinelUZ — Deployment Architecture
+
+node "Organisation Network" {
+  node "Windows Endpoint 1\n(Workstation)" as EP1 {
+    component "SentinelUZ Agent\nv1.0 (C++ Service)" as A1
+  }
+  node "Windows Endpoint 2\n(Server)" as EP2 {
+    component "SentinelUZ Agent\nv1.0 (C++ Service)" as A2
+  }
+  node "Windows Endpoint N\n(any device)" as EPN {
+    component "SentinelUZ Agent\nv1.0 (C++ Service)" as AN
+  }
+}
+
+node "Security Operations\n(Hetzner VPS / On-premise)" {
+  node "Docker Compose Network" {
+    node "django container\nPython 3.12 / Django 4.2" {
+      component "REST API\n(DRF)" as API
+      component "Web Dashboard\n(9 pages, 3 roles)" as DASH
+    }
+    node "celery container\nCelery 5 worker" {
+      component "Alert processing\nTI sync tasks" as CEL
+    }
+    database "postgres container\nPostgreSQL 15" {
+      component "16 models\n111 tests" as PG
+    }
+    database "redis container\nRedis 7" {
+      component "Task queue\nCelery broker" as RED
+    }
+  }
+}
+
+node "External TI Sources" {
+  component "MalwareBazaar\n264,109 hashes" as MB
+  component "abuse.ch\nURLhaus feed" as UH
+}
+
+A1 --> API : HTTPS :8000\nPOST /api/agent/heartbeat/
+A2 --> API : HTTPS :8000
+AN --> API : HTTPS :8000
+API --> PG : ORM queries
+API --> RED : Task dispatch
+CEL --> PG : Write results
+CEL --> MB : Daily TI sync
+CEL --> UH : Daily TI sync
+
+DASH --> API : Browser HTTPS
+@enduml
